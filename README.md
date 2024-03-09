@@ -158,11 +158,6 @@ Total ticks crossed: 7
 
 ```
 
-```
-./bin/cli quote --tokenIn 0x7F5c764cBc14f9669B88837ca1490cCa17c31607 --tokenOut 0x4200000000000000000000000000000000000042 --amount 1 --exactIn --minSplits 1 --protocols v2 --router alpha --chainId 10
-```
-
-
 ## Optimism-Goerli
 
 ```
@@ -265,3 +260,9 @@ This total amount of gas each `eth_call` can consume is equal to the `multicallC
 If you are running your own node, we recommend you configure start your node with a higher gas limit per call. For example, on Geth you can use the command line argument `--rpc.gascap 150000000` to raise the limit to 150m, which is enough to run the default configuration of this package.
 
 If you are using Hardhat mainnet forking, you should add `blockGasLimit: 150_000_000` to your Hardhat config to use the default package configuration.
+
+## Building
+
+```
+rm -rf src/types/ && rm -rf build/ && rm -rf node_modules && npm i && npm run build && rm -rf node_modules && rm -rf src/types/
+```

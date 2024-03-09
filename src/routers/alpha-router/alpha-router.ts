@@ -1,14 +1,8 @@
 import { BigNumber } from '@ethersproject/bignumber';
 import { BaseProvider, JsonRpcProvider } from '@ethersproject/providers';
 import DEFAULT_TOKEN_LIST from '@uniswap/default-token-list';
-import { Protocol, SwapRouter, Trade, ZERO } from '@uniswap/router-sdk';
-import {
-  ChainId,
-  Currency,
-  Fraction,
-  Token,
-  TradeType,
-} from '@uniswap/sdk-core';
+import { Protocol, SwapRouter, Trade } from '@uniswap/router-sdk';
+import { ChainId, Currency, Fraction, Token, TradeType } from '@uniswap/sdk-core';
 import { TokenList } from '@uniswap/token-lists';
 import { Pool, Position, SqrtPriceMath, TickMath } from '@uniswap/v3-sdk';
 import retry from 'async-retry';
@@ -30,7 +24,6 @@ import {
   IOnChainQuoteProvider,
   IRouteCachingProvider,
   ISwapRouterProvider,
-  ITokenPropertiesProvider,
   IV2QuoteProvider,
   IV2SubgraphProvider,
   LegacyGasPriceProvider,
@@ -41,35 +34,18 @@ import {
   StaticV2SubgraphProvider,
   StaticV3SubgraphProvider,
   SwapRouterProvider,
-  TokenPropertiesProvider,
   UniswapMulticallProvider,
   URISubgraphProvider,
   V2QuoteProvider,
   V2SubgraphProviderWithFallBacks,
   V3SubgraphProviderWithFallBacks,
 } from '../../providers';
-import {
-  CachingTokenListProvider,
-  ITokenListProvider,
-} from '../../providers/caching-token-list-provider';
-import {
-  GasPrice,
-  IGasPriceProvider,
-} from '../../providers/gas-price-provider';
-import {
-  IPortionProvider,
-  PortionProvider,
-} from '../../providers/portion-provider';
-import { OnChainTokenFeeFetcher } from '../../providers/token-fee-fetcher';
+import { CachingTokenListProvider, ITokenListProvider } from '../../providers/caching-token-list-provider';
+import { GasPrice, IGasPriceProvider } from '../../providers/gas-price-provider';
+import { ProviderConfig } from '../../providers/provider';
 import { ITokenProvider, TokenProvider } from '../../providers/token-provider';
-import {
-  ITokenValidatorProvider,
-  TokenValidatorProvider,
-} from '../../providers/token-validator-provider';
-import {
-  IV2PoolProvider,
-  V2PoolProvider,
-} from '../../providers/v2/pool-provider';
+import { ITokenValidatorProvider, TokenValidatorProvider, } from '../../providers/token-validator-provider';
+import { IV2PoolProvider, V2PoolProvider } from '../../providers/v2/pool-provider';
 import {
   ArbitrumGasData,
   ArbitrumGasDataProvider,
@@ -77,28 +53,15 @@ import {
   OptimismGasData,
   OptimismGasDataProvider,
 } from '../../providers/v3/gas-data-provider';
-import {
-  IV3PoolProvider,
-  V3PoolProvider,
-} from '../../providers/v3/pool-provider';
+import { IV3PoolProvider, V3PoolProvider } from '../../providers/v3/pool-provider';
 import { IV3SubgraphProvider } from '../../providers/v3/subgraph-provider';
 import { Erc20__factory } from '../../types/other/factories/Erc20__factory';
 import { SWAP_ROUTER_02_ADDRESSES, WRAPPED_NATIVE_CURRENCY } from '../../util';
 import { CurrencyAmount } from '../../util/amounts';
-import {
-  ID_TO_CHAIN_ID,
-  ID_TO_NETWORK_NAME,
-  V2_SUPPORTED,
-} from '../../util/chains';
-import {
-  getHighestLiquidityV3NativePool,
-  getHighestLiquidityV3USDPool,
-} from '../../util/gas-factory-helpers';
+import { ID_TO_CHAIN_ID, ID_TO_NETWORK_NAME, V2_SUPPORTED } from '../../util/chains';
+import { getHighestLiquidityV3NativePool, getHighestLiquidityV3USDPool } from '../../util/gas-factory-helpers';
 import { log } from '../../util/log';
-import {
-  buildSwapMethodParameters,
-  buildTrade,
-} from '../../util/methodParameters';
+import { buildSwapMethodParameters, buildTrade } from '../../util/methodParameters';
 import { metric, MetricLoggerUnit } from '../../util/metric';
 import { UNSUPPORTED_TOKENS } from '../../util/unsupported-tokens';
 import {
@@ -113,41 +76,26 @@ import {
   SwapRoute,
   SwapToRatioResponse,
   SwapToRatioStatus,
-  V2Route,
   V3Route,
 } from '../router';
 
-import {
-  DEFAULT_ROUTING_CONFIG_BY_CHAIN,
-  ETH_GAS_STATION_API_URL,
-} from './config';
+import { DEFAULT_ROUTING_CONFIG_BY_CHAIN, ETH_GAS_STATION_API_URL } from './config';
 import {
   MixedRouteWithValidQuote,
   RouteWithValidQuote,
-  V2RouteWithValidQuote,
   V3RouteWithValidQuote,
 } from './entities/route-with-valid-quote';
 import { BestSwapRoute, getBestSwapRoute } from './functions/best-swap-route';
 import { calculateRatioAmountIn } from './functions/calculate-ratio-amount-in';
+import { CandidatePoolsBySelectionCriteria, PoolId, } from './functions/get-candidate-pools';
 import {
-  CandidatePoolsBySelectionCriteria,
-  getV2CandidatePools,
-  getV3CandidatePools,
-  PoolId,
-  V2CandidatePools,
-  V3CandidatePools,
-} from './functions/get-candidate-pools';
-import {
-  GasModelProviderConfig,
-  GasModelType,
   IGasModel,
   IOnChainGasModelFactory,
   IV2GasModelFactory,
-  LiquidityCalculationPools,
+  LiquidityCalculationPools
 } from './gas-models/gas-model';
 import { MixedRouteHeuristicGasModelFactory } from './gas-models/mixedRoute/mixed-route-heuristic-gas-model';
 import { V2HeuristicGasModelFactory } from './gas-models/v2/v2-heuristic-gas-model';
-import { NATIVE_OVERHEAD } from './gas-models/v3/gas-costs';
 import { V3HeuristicGasModelFactory } from './gas-models/v3/v3-heuristic-gas-model';
 import { GetQuotesResult, MixedQuoter, V2Quoter, V3Quoter } from './quoters';
 
@@ -251,33 +199,11 @@ export type AlphaRouterParams = {
    * A provider for caching the best route given an amount, quoteToken, tradeType
    */
   routeCachingProvider?: IRouteCachingProvider;
-
-  /**
-   * A provider for getting token properties for special tokens like fee-on-transfer tokens.
-   */
-  tokenPropertiesProvider?: ITokenPropertiesProvider;
-
-  /**
-   * A provider for computing the portion-related data for routes and quotes.
-   */
-  portionProvider?: IPortionProvider;
-
-  /**
-   * All the supported v2 chains configuration
-   */
-  v2Supported?: ChainId[];
 };
 
 export class MapWithLowerCaseKey<V> extends Map<string, V> {
   override set(key: string, value: V): this {
     return super.set(key.toLowerCase(), value);
-  }
-}
-
-export class LowerCaseStringArray extends Array<string> {
-  constructor(...items: string[]) {
-    // Convert all items to lowercase before calling the parent constructor
-    super(...items.map((item) => item.toLowerCase()));
   }
 }
 
@@ -318,13 +244,6 @@ export type ProtocolPoolSelection = {
    * it would find the top 4 pools that involve USDT, and find the topNSecondHop pools that involve DAI
    */
   topNSecondHopForTokenAddress?: MapWithLowerCaseKey<number>;
-  /**
-   * List of token addresses to avoid using as a second hop.
-   * There might be multiple reasons why we would like to avoid a specific token,
-   *   but the specific reason that we are trying to solve is when the pool is not synced properly
-   *   e.g. when the pool has a rebasing token that isn't syncing the pool on every rebase.
-   */
-  tokensToAvoidOnSecondHops?: LowerCaseStringArray;
   /**
    * The top N pools for token in and token out that involve a token from a list of
    * hardcoded 'base tokens'. These are standard tokens such as WETH, USDC, DAI, etc.
@@ -394,50 +313,11 @@ export type AlphaRouterConfig = {
    * 40% of input => Route 3
    */
   distributionPercent: number;
-  /**
-   * Flag to indicate whether to use the cached routes or not.
-   * By default, the cached routes will be used.
-   */
-  useCachedRoutes?: boolean;
-  /**
-   * Flag to indicate whether to write to the cached routes or not.
-   * By default, the cached routes will be written to.
-   */
-  writeToCachedRoutes?: boolean;
-  /**
-   * Flag to indicate whether to use the CachedRoutes in optimistic mode.
-   * Optimistic mode means that we will allow blocksToLive greater than 1.
-   */
-  optimisticCachedRoutes?: boolean;
-  /**
-   * Debug param that helps to see the short-term latencies improvements without impacting the main path.
-   */
-  debugRouting?: boolean;
-  /**
-   * Flag that allow us to override the cache mode.
-   */
-  overwriteCacheMode?: CacheMode;
-  /**
-   * Flag for token properties provider to enable fetching fee-on-transfer tokens.
-   */
-  enableFeeOnTransferFeeFetching?: boolean;
-  /**
-   * Tenderly natively support save simulation failures if failed,
-   * we need this as a pass-through flag to enable/disable this feature.
-   */
-  saveTenderlySimulationIfFailed?: boolean;
-  /**
-   * Include an additional response field specifying the swap gas estimation in terms of a specific gas token.
-   * This requires a suitable Native/GasToken pool to exist on V3. If one does not exist this field will return null.
-   */
-  gasToken?: string;
 };
 
 export class AlphaRouter
-  implements
-    IRouter<AlphaRouterConfig>,
-    ISwapToRatio<AlphaRouterConfig, SwapAndAddConfig>
-{
+  implements IRouter<AlphaRouterConfig>,
+    ISwapToRatio<AlphaRouterConfig, SwapAndAddConfig> {
   protected chainId: ChainId;
   protected provider: BaseProvider;
   protected multicall2Provider: UniswapMulticallProvider;
@@ -463,9 +343,6 @@ export class AlphaRouter
   protected v3Quoter: V3Quoter;
   protected mixedQuoter: MixedQuoter;
   protected routeCachingProvider?: IRouteCachingProvider;
-  protected tokenPropertiesProvider: ITokenPropertiesProvider;
-  protected portionProvider: IPortionProvider;
-  protected v2Supported?: ChainId[];
 
   constructor({
     chainId,
@@ -489,9 +366,6 @@ export class AlphaRouter
     arbitrumGasDataProvider,
     simulator,
     routeCachingProvider,
-    tokenPropertiesProvider,
-    portionProvider,
-    v2Supported,
   }: AlphaRouterParams) {
     this.chainId = chainId;
     this.provider = provider;
@@ -514,7 +388,8 @@ export class AlphaRouter
       switch (chainId) {
         case ChainId.OPTIMISM:
         case ChainId.OPTIMISM_GOERLI:
-        case ChainId.OPTIMISM_SEPOLIA:
+        case ChainId.BASE:
+        case ChainId.BASE_GOERLI:
           this.onChainQuoteProvider = new OnChainQuoteProvider(
             chainId,
             provider,
@@ -547,43 +422,8 @@ export class AlphaRouter
             }
           );
           break;
-        case ChainId.BASE:
-        case ChainId.BASE_GOERLI:
-          this.onChainQuoteProvider = new OnChainQuoteProvider(
-            chainId,
-            provider,
-            this.multicall2Provider,
-            {
-              retries: 2,
-              minTimeout: 100,
-              maxTimeout: 1000,
-            },
-            {
-              multicallChunk: 80,
-              gasLimitPerCall: 1_200_000,
-              quoteMinSuccessRate: 0.1,
-            },
-            {
-              gasLimitOverride: 3_000_000,
-              multicallChunk: 45,
-            },
-            {
-              gasLimitOverride: 3_000_000,
-              multicallChunk: 45,
-            },
-            {
-              baseBlockOffset: -10,
-              rollback: {
-                enabled: true,
-                attemptsBeforeRollback: 1,
-                rollbackBlockOffset: -10,
-              },
-            }
-          );
-          break;
         case ChainId.ARBITRUM_ONE:
         case ChainId.ARBITRUM_GOERLI:
-        case ChainId.ARBITRUM_SEPOLIA:
           this.onChainQuoteProvider = new OnChainQuoteProvider(
             chainId,
             provider,
@@ -658,33 +498,11 @@ export class AlphaRouter
       }
     }
 
-    if (tokenValidatorProvider) {
-      this.tokenValidatorProvider = tokenValidatorProvider;
-    } else if (this.chainId === ChainId.MAINNET) {
-      this.tokenValidatorProvider = new TokenValidatorProvider(
-        this.chainId,
-        this.multicall2Provider,
-        new NodeJSCache(new NodeCache({ stdTTL: 30000, useClones: false }))
-      );
-    }
-    if (tokenPropertiesProvider) {
-      this.tokenPropertiesProvider = tokenPropertiesProvider;
-    } else {
-      this.tokenPropertiesProvider = new TokenPropertiesProvider(
-        this.chainId,
-        new NodeJSCache(new NodeCache({ stdTTL: 86400, useClones: false })),
-        new OnChainTokenFeeFetcher(this.chainId, provider)
-      );
-    }
     this.v2PoolProvider =
       v2PoolProvider ??
       new CachingV2PoolProvider(
         chainId,
-        new V2PoolProvider(
-          chainId,
-          this.multicall2Provider,
-          this.tokenPropertiesProvider
-        ),
+        new V2PoolProvider(chainId, this.multicall2Provider),
         new NodeJSCache(new NodeCache({ stdTTL: 60, useClones: false }))
       );
 
@@ -709,7 +527,6 @@ export class AlphaRouter
         ),
         new TokenProvider(chainId, this.multicall2Provider)
       );
-    this.portionProvider = portionProvider ?? new PortionProvider();
 
     const chainName = ID_TO_NETWORK_NAME(chainId);
 
@@ -758,9 +575,7 @@ export class AlphaRouter
         new LegacyGasPriceProvider(this.provider as JsonRpcProvider)
       );
     } else {
-      gasPriceProviderInstance = new ETHGasStationInfoProvider(
-        ETH_GAS_STATION_API_URL
-      );
+      gasPriceProviderInstance = new ETHGasStationInfoProvider(ETH_GAS_STATION_API_URL);
     }
 
     this.gasPriceProvider =
@@ -796,6 +611,15 @@ export class AlphaRouter
         arbitrumGasDataProvider ??
         new ArbitrumGasDataProvider(chainId, this.provider);
     }
+    if (tokenValidatorProvider) {
+      this.tokenValidatorProvider = tokenValidatorProvider;
+    } else if (this.chainId === ChainId.MAINNET) {
+      this.tokenValidatorProvider = new TokenValidatorProvider(
+        this.chainId,
+        this.multicall2Provider,
+        new NodeJSCache(new NodeCache({ stdTTL: 30000, useClones: false }))
+      );
+    }
 
     // Initialize the Quoters.
     // Quoters are an abstraction encapsulating the business logic of fetching routes and quotes.
@@ -807,8 +631,7 @@ export class AlphaRouter
       this.tokenProvider,
       this.chainId,
       this.blockedTokenListProvider,
-      this.tokenValidatorProvider,
-      this.l2GasDataProvider
+      this.tokenValidatorProvider
     );
 
     this.v3Quoter = new V3Quoter(
@@ -832,8 +655,6 @@ export class AlphaRouter
       this.blockedTokenListProvider,
       this.tokenValidatorProvider
     );
-
-    this.v2Supported = v2Supported ?? V2_SUPPORTED;
   }
 
   public async routeToRatio(
@@ -1034,30 +855,7 @@ export class AlphaRouter
     swapConfig?: SwapOptions,
     partialRoutingConfig: Partial<AlphaRouterConfig> = {}
   ): Promise<SwapRoute | null> {
-    const originalAmount = amount;
-    if (tradeType === TradeType.EXACT_OUTPUT) {
-      const portionAmount = this.portionProvider.getPortionAmount(
-        amount,
-        tradeType,
-        swapConfig
-      );
-      if (portionAmount && portionAmount.greaterThan(ZERO)) {
-        // In case of exact out swap, before we route, we need to make sure that the
-        // token out amount accounts for flat portion, and token in amount after the best swap route contains the token in equivalent of portion.
-        // In other words, in case a pool's LP fee bps is lower than the portion bps (0.01%/0.05% for v3), a pool can go insolvency.
-        // This is because instead of the swapper being responsible for the portion,
-        // the pool instead gets responsible for the portion.
-        // The addition below avoids that situation.
-        amount = amount.add(portionAmount);
-      }
-    }
-
-    const { currencyIn, currencyOut } =
-      this.determineCurrencyInOutFromTradeType(
-        tradeType,
-        amount,
-        quoteCurrency
-      );
+    const { currencyIn, currencyOut } = this.determineCurrencyInOutFromTradeType(tradeType, amount, quoteCurrency);
 
     const tokenIn = currencyIn.wrapped;
     const tokenOut = currencyOut.wrapped;
@@ -1066,10 +864,7 @@ export class AlphaRouter
     metric.setProperty('pair', `${tokenIn.symbol}/${tokenOut.symbol}`);
     metric.setProperty('tokenIn', tokenIn.address);
     metric.setProperty('tokenOut', tokenOut.address);
-    metric.setProperty(
-      'tradeType',
-      tradeType === TradeType.EXACT_INPUT ? 'ExactIn' : 'ExactOut'
-    );
+    metric.setProperty('tradeType', tradeType === TradeType.EXACT_INPUT ? 'ExactIn' : 'ExactOut');
 
     metric.putMetric(
       `QuoteRequestedForChain${this.chainId}`,
@@ -1079,104 +874,52 @@ export class AlphaRouter
 
     // Get a block number to specify in all our calls. Ensures data we fetch from chain is
     // from the same block.
-    const blockNumber =
-      partialRoutingConfig.blockNumber ?? this.getBlockNumberPromise();
+    const blockNumber = partialRoutingConfig.blockNumber ?? this.getBlockNumberPromise();
 
     const routingConfig: AlphaRouterConfig = _.merge(
-      {
-        // These settings could be changed by the partialRoutingConfig
-        useCachedRoutes: true,
-        writeToCachedRoutes: true,
-        optimisticCachedRoutes: false,
-      },
+      {},
       DEFAULT_ROUTING_CONFIG_BY_CHAIN(this.chainId),
       partialRoutingConfig,
       { blockNumber }
     );
 
-    if (routingConfig.debugRouting) {
-      log.warn(`Finalized routing config is ${JSON.stringify(routingConfig)}`);
-    }
-
-    const gasPriceWei = await this.getGasPriceWei(
-      await blockNumber,
-      await partialRoutingConfig.blockNumber
-    );
+    const gasPriceWei = await this.getGasPriceWei();
 
     const quoteToken = quoteCurrency.wrapped;
-    // const gasTokenAccessor = await this.tokenProvider.getTokens([routingConfig.gasToken!]);
-    const gasToken = routingConfig.gasToken
-      ? (
-          await this.tokenProvider.getTokens([routingConfig.gasToken])
-        ).getTokenByAddress(routingConfig.gasToken)
-      : undefined;
 
-    const providerConfig: GasModelProviderConfig = {
-      ...routingConfig,
-      blockNumber,
-      additionalGasOverhead: NATIVE_OVERHEAD(
-        this.chainId,
-        amount.currency,
-        quoteCurrency
-      ),
-      gasToken,
-    };
-
-    const {
-      v2GasModel: v2GasModel,
-      v3GasModel: v3GasModel,
-      mixedRouteGasModel: mixedRouteGasModel,
-    } = await this.getGasModels(
+    const [v3GasModel, mixedRouteGasModel] = await this.getGasModels(
       gasPriceWei,
       amount.currency.wrapped,
       quoteToken,
-      providerConfig
+      { blockNumber }
     );
 
     // Create a Set to sanitize the protocols input, a Set of undefined becomes an empty set,
     // Then create an Array from the values of that Set.
-    const protocols: Protocol[] = Array.from(
-      new Set(routingConfig.protocols).values()
-    );
+    const protocols: Protocol[] = Array.from(new Set(routingConfig.protocols).values());
 
-    const cacheMode =
-      routingConfig.overwriteCacheMode ??
-      (await this.routeCachingProvider?.getCacheMode(
-        this.chainId,
-        amount,
-        quoteToken,
-        tradeType,
-        protocols
-      ));
+    const cacheMode = await this.routeCachingProvider?.getCacheMode(
+      this.chainId,
+      amount,
+      quoteToken,
+      tradeType,
+      protocols
+    );
 
     // Fetch CachedRoutes
     let cachedRoutes: CachedRoutes | undefined;
-    if (routingConfig.useCachedRoutes && cacheMode !== CacheMode.Darkmode) {
+    if (cacheMode !== CacheMode.Darkmode) {
       cachedRoutes = await this.routeCachingProvider?.getCachedRoute(
         this.chainId,
         amount,
         quoteToken,
         tradeType,
         protocols,
-        await blockNumber,
-        routingConfig.optimisticCachedRoutes
+        await blockNumber
       );
     }
 
-    metric.putMetric(
-      routingConfig.useCachedRoutes
-        ? 'GetQuoteUsingCachedRoutes'
-        : 'GetQuoteNotUsingCachedRoutes',
-      1,
-      MetricLoggerUnit.Count
-    );
-
-    if (
-      cacheMode &&
-      routingConfig.useCachedRoutes &&
-      cacheMode !== CacheMode.Darkmode &&
-      !cachedRoutes
-    ) {
+    if (cacheMode && cacheMode !== CacheMode.Darkmode && !cachedRoutes) {
       metric.putMetric(
         `GetCachedRoute_miss_${cacheMode}`,
         1,
@@ -1191,15 +934,11 @@ export class AlphaRouter
           cacheMode,
           amount: amount.toExact(),
           chainId: this.chainId,
-          tradeType: this.tradeTypeStr(tradeType),
+          tradeType: this.tradeTypeStr(tradeType)
         },
-        `GetCachedRoute miss ${cacheMode} for ${this.tokenPairSymbolTradeTypeChainId(
-          tokenIn,
-          tokenOut,
-          tradeType
-        )}`
+        `GetCachedRoute miss ${cacheMode} for ${this.tokenPairSymbolTradeTypeChainId(tokenIn, tokenOut, tradeType)}`
       );
-    } else if (cachedRoutes && routingConfig.useCachedRoutes) {
+    } else if (cachedRoutes) {
       metric.putMetric(
         `GetCachedRoute_hit_${cacheMode}`,
         1,
@@ -1214,18 +953,13 @@ export class AlphaRouter
           cacheMode,
           amount: amount.toExact(),
           chainId: this.chainId,
-          tradeType: this.tradeTypeStr(tradeType),
+          tradeType: this.tradeTypeStr(tradeType)
         },
-        `GetCachedRoute hit ${cacheMode} for ${this.tokenPairSymbolTradeTypeChainId(
-          tokenIn,
-          tokenOut,
-          tradeType
-        )}`
+        `GetCachedRoute hit ${cacheMode} for ${this.tokenPairSymbolTradeTypeChainId(tokenIn, tokenOut, tradeType)}`
       );
     }
 
-    let swapRouteFromCachePromise: Promise<BestSwapRoute | null> =
-      Promise.resolve(null);
+    let swapRouteFromCachePromise: Promise<BestSwapRoute | null> = Promise.resolve(null);
     if (cachedRoutes) {
       swapRouteFromCachePromise = this.getSwapRouteFromCache(
         cachedRoutes,
@@ -1236,14 +970,11 @@ export class AlphaRouter
         routingConfig,
         v3GasModel,
         mixedRouteGasModel,
-        gasPriceWei,
-        v2GasModel,
-        swapConfig
+        gasPriceWei
       );
     }
 
-    let swapRouteFromChainPromise: Promise<BestSwapRoute | null> =
-      Promise.resolve(null);
+    let swapRouteFromChainPromise: Promise<BestSwapRoute | null> = Promise.resolve(null);
     if (!cachedRoutes || cacheMode !== CacheMode.Livemode) {
       swapRouteFromChainPromise = this.getSwapRouteFromChain(
         amount,
@@ -1255,56 +986,33 @@ export class AlphaRouter
         routingConfig,
         v3GasModel,
         mixedRouteGasModel,
-        gasPriceWei,
-        v2GasModel,
-        swapConfig
+        gasPriceWei
       );
     }
 
     const [swapRouteFromCache, swapRouteFromChain] = await Promise.all([
       swapRouteFromCachePromise,
-      swapRouteFromChainPromise,
+      swapRouteFromChainPromise
     ]);
 
     let swapRouteRaw: BestSwapRoute | null;
-    let hitsCachedRoute = false;
     if (cacheMode === CacheMode.Livemode && swapRouteFromCache) {
-      log.info(
-        `CacheMode is ${cacheMode}, and we are using swapRoute from cache`
-      );
-      hitsCachedRoute = true;
+      log.info(`CacheMode is ${cacheMode}, and we are using swapRoute from cache`);
       swapRouteRaw = swapRouteFromCache;
     } else {
-      log.info(
-        `CacheMode is ${cacheMode}, and we are using materialized swapRoute`
-      );
+      log.info(`CacheMode is ${cacheMode}, and we are using materialized swapRoute`);
       swapRouteRaw = swapRouteFromChain;
     }
 
-    if (
-      cacheMode === CacheMode.Tapcompare &&
-      swapRouteFromCache &&
-      swapRouteFromChain
-    ) {
-      const quoteDiff = swapRouteFromChain.quote.subtract(
-        swapRouteFromCache.quote
-      );
-      const quoteGasAdjustedDiff = swapRouteFromChain.quoteGasAdjusted.subtract(
-        swapRouteFromCache.quoteGasAdjusted
-      );
-      const gasUsedDiff = swapRouteFromChain.estimatedGasUsed.sub(
-        swapRouteFromCache.estimatedGasUsed
-      );
+    if (cacheMode === CacheMode.Tapcompare && swapRouteFromCache && swapRouteFromChain) {
+      const quoteDiff = swapRouteFromChain.quote.subtract(swapRouteFromCache.quote);
+      const quoteGasAdjustedDiff = swapRouteFromChain.quoteGasAdjusted.subtract(swapRouteFromCache.quoteGasAdjusted);
+      const gasUsedDiff = swapRouteFromChain.estimatedGasUsed.sub(swapRouteFromCache.estimatedGasUsed);
 
       // Only log if quoteDiff is different from 0, or if quoteGasAdjustedDiff and gasUsedDiff are both different from 0
-      if (
-        !quoteDiff.equalTo(0) ||
-        !(quoteGasAdjustedDiff.equalTo(0) || gasUsedDiff.eq(0))
-      ) {
+      if (!quoteDiff.equalTo(0) || !(quoteGasAdjustedDiff.equalTo(0) || gasUsedDiff.eq(0))) {
         // Calculates the percentage of the difference with respect to the quoteFromChain (not from cache)
-        const misquotePercent = quoteGasAdjustedDiff
-          .divide(swapRouteFromChain.quoteGasAdjusted)
-          .multiply(100);
+        const misquotePercent = quoteGasAdjustedDiff.divide(swapRouteFromChain.quoteGasAdjusted).multiply(100);
 
         metric.putMetric(
           `TapcompareCachedRoute_quoteGasAdjustedDiffPercent`,
@@ -1317,10 +1025,8 @@ export class AlphaRouter
             quoteFromChain: swapRouteFromChain.quote.toExact(),
             quoteFromCache: swapRouteFromCache.quote.toExact(),
             quoteDiff: quoteDiff.toExact(),
-            quoteGasAdjustedFromChain:
-              swapRouteFromChain.quoteGasAdjusted.toExact(),
-            quoteGasAdjustedFromCache:
-              swapRouteFromCache.quoteGasAdjusted.toExact(),
+            quoteGasAdjustedFromChain: swapRouteFromChain.quoteGasAdjusted.toExact(),
+            quoteGasAdjustedFromCache: swapRouteFromCache.quoteGasAdjusted.toExact(),
             quoteGasAdjustedDiff: quoteGasAdjustedDiff.toExact(),
             gasUsedFromChain: swapRouteFromChain.estimatedGasUsed.toString(),
             gasUsedFromCache: swapRouteFromCache.estimatedGasUsed.toString(),
@@ -1329,12 +1035,8 @@ export class AlphaRouter
             routesFromCache: swapRouteFromCache.routes.toString(),
             amount: amount.toExact(),
             originalAmount: cachedRoutes?.originalAmount,
-            pair: this.tokenPairSymbolTradeTypeChainId(
-              tokenIn,
-              tokenOut,
-              tradeType
-            ),
-            blockNumber,
+            pair: this.tokenPairSymbolTradeTypeChainId(tokenIn, tokenOut, tradeType),
+            blockNumber
           },
           `Comparing quotes between Chain and Cache for ${this.tokenPairSymbolTradeTypeChainId(
             tokenIn,
@@ -1356,15 +1058,9 @@ export class AlphaRouter
       routes: routeAmounts,
       estimatedGasUsedQuoteToken,
       estimatedGasUsedUSD,
-      estimatedGasUsedGasToken,
     } = swapRouteRaw;
 
-    if (
-      this.routeCachingProvider &&
-      routingConfig.writeToCachedRoutes &&
-      cacheMode !== CacheMode.Darkmode &&
-      swapRouteFromChain
-    ) {
+    if (this.routeCachingProvider && cacheMode !== CacheMode.Darkmode && swapRouteFromChain) {
       // Generate the object to be cached
       const routesToCache = CachedRoutes.fromRoutesWithValidQuotes(
         swapRouteFromChain.routes,
@@ -1380,43 +1076,31 @@ export class AlphaRouter
       if (routesToCache) {
         // Attempt to insert the entry in cache. This is fire and forget promise.
         // The catch method will prevent any exception from blocking the normal code execution.
-        this.routeCachingProvider
-          .setCachedRoute(routesToCache, amount)
-          .then((success) => {
-            const status = success ? 'success' : 'rejected';
-            metric.putMetric(
-              `SetCachedRoute_${status}`,
-              1,
-              MetricLoggerUnit.Count
-            );
-          })
-          .catch((reason) => {
-            log.error(
-              {
-                reason: reason,
-                tokenPair: this.tokenPairSymbolTradeTypeChainId(
-                  tokenIn,
-                  tokenOut,
-                  tradeType
-                ),
-              },
-              `SetCachedRoute failure`
-            );
+        this.routeCachingProvider.setCachedRoute(routesToCache, amount).then((success) => {
+          const status = success ? 'success' : 'rejected';
+          metric.putMetric(
+            `SetCachedRoute_${status}`,
+            1,
+            MetricLoggerUnit.Count
+          );
+        }).catch((reason) => {
+          log.error(
+            {
+              reason: reason,
+              tokenPair: this.tokenPairSymbolTradeTypeChainId(tokenIn, tokenOut, tradeType),
+            },
+            `SetCachedRoute failure`
+          );
 
-            metric.putMetric(
-              `SetCachedRoute_failure`,
-              1,
-              MetricLoggerUnit.Count
-            );
-          });
-      } else {
-        metric.putMetric(
-          `SetCachedRoute_unnecessary`,
-          1,
-          MetricLoggerUnit.Count
-        );
+          metric.putMetric(
+            `SetCachedRoute_failure`,
+            1,
+            MetricLoggerUnit.Count
+          );
+        });
       }
     }
+
 
     metric.putMetric(
       `QuoteFoundForChain${this.chainId}`,
@@ -1444,55 +1128,17 @@ export class AlphaRouter
       );
     }
 
-    const tokenOutAmount =
-      tradeType === TradeType.EXACT_OUTPUT
-        ? originalAmount // we need to pass in originalAmount instead of amount, because amount already added portionAmount in case of exact out swap
-        : quote;
-    const portionAmount = this.portionProvider.getPortionAmount(
-      tokenOutAmount,
-      tradeType,
-      swapConfig
-    );
-    const portionQuoteAmount = this.portionProvider.getPortionQuoteAmount(
-      tradeType,
-      quote,
-      amount, // we need to pass in amount instead of originalAmount here, because amount here needs to add the portion for exact out
-      portionAmount
-    );
-
-    // we need to correct quote and quote gas adjusted for exact output when portion is part of the exact out swap
-    const correctedQuote = this.portionProvider.getQuote(
-      tradeType,
-      quote,
-      portionQuoteAmount
-    );
-
-    const correctedQuoteGasAdjusted = this.portionProvider.getQuoteGasAdjusted(
-      tradeType,
-      quoteGasAdjusted,
-      portionQuoteAmount
-    );
-    const quoteGasAndPortionAdjusted =
-      this.portionProvider.getQuoteGasAndPortionAdjusted(
-        tradeType,
-        quoteGasAdjusted,
-        portionAmount
-      );
     const swapRoute: SwapRoute = {
-      quote: correctedQuote,
-      quoteGasAdjusted: correctedQuoteGasAdjusted,
+      quote,
+      quoteGasAdjusted,
       estimatedGasUsed,
       estimatedGasUsedQuoteToken,
       estimatedGasUsedUSD,
-      estimatedGasUsedGasToken,
       gasPriceWei,
       route: routeAmounts,
       trade,
       methodParameters,
       blockNumber: BigNumber.from(await blockNumber),
-      hitsCachedRoute: hitsCachedRoute,
-      portionAmount: portionAmount,
-      quoteGasAndPortionAdjusted: quoteGasAndPortionAdjusted,
     };
 
     if (
@@ -1504,15 +1150,7 @@ export class AlphaRouter
       if (!this.simulator) {
         throw new Error('Simulator not initialized!');
       }
-
-      log.info(
-        JSON.stringify(
-          { swapConfig, methodParameters, providerConfig },
-          null,
-          2
-        ),
-        `Starting simulation`
-      );
+      log.info({ swapConfig, methodParameters }, 'Starting simulation');
       const fromAddress = swapConfig.simulate.fromAddress;
       const beforeSimulate = Date.now();
       const swapRouteWithSimulation = await this.simulator.simulate(
@@ -1524,9 +1162,9 @@ export class AlphaRouter
         // So we init a new CurrencyAmount object here
         CurrencyAmount.fromRawAmount(quoteCurrency, quote.quotient.toString()),
         this.l2GasDataProvider
-          ? await this.l2GasDataProvider!.getGasData(providerConfig)
+          ? await this.l2GasDataProvider!.getGasData()
           : undefined,
-        providerConfig
+        { blockNumber }
       );
       metric.putMetric(
         'SimulateTransaction',
@@ -1548,9 +1186,7 @@ export class AlphaRouter
     routingConfig: AlphaRouterConfig,
     v3GasModel: IGasModel<V3RouteWithValidQuote>,
     mixedRouteGasModel: IGasModel<MixedRouteWithValidQuote>,
-    gasPriceWei: BigNumber,
-    v2GasModel?: IGasModel<V2RouteWithValidQuote>,
-    swapConfig?: SwapOptions
+    gasPriceWei: BigNumber
   ): Promise<BestSwapRoute | null> {
     log.info(
       {
@@ -1563,21 +1199,18 @@ export class AlphaRouter
     );
     const quotePromises: Promise<GetQuotesResult>[] = [];
 
-    const v3Routes = cachedRoutes.routes.filter(
-      (route) => route.protocol === Protocol.V3
-    );
-    const v2Routes = cachedRoutes.routes.filter(
-      (route) => route.protocol === Protocol.V2
-    );
-    const mixedRoutes = cachedRoutes.routes.filter(
-      (route) => route.protocol === Protocol.MIXED
-    );
+    const v3Routes = cachedRoutes.routes.filter((route) => route.protocol === Protocol.V3);
+    const v2Routes = cachedRoutes.routes.filter((route) => route.protocol === Protocol.V2);
+    const mixedRoutes = cachedRoutes.routes.filter((route) => route.protocol === Protocol.MIXED);
 
     let percents: number[];
     let amounts: CurrencyAmount[];
     if (cachedRoutes.routes.length > 1) {
       // If we have more than 1 route, we will quote the different percents for it, following the regular process
-      [percents, amounts] = this.getAmountDistribution(amount, routingConfig);
+      [percents, amounts] = this.getAmountDistribution(
+        amount,
+        routingConfig
+      );
     } else if (cachedRoutes.routes.length == 1) {
       [percents, amounts] = [[100], [amount]];
     } else {
@@ -1586,119 +1219,59 @@ export class AlphaRouter
     }
 
     if (v3Routes.length > 0) {
-      const v3RoutesFromCache: V3Route[] = v3Routes.map(
-        (cachedRoute) => cachedRoute.route as V3Route
-      );
-      metric.putMetric(
-        'SwapRouteFromCache_V3_GetQuotes_Request',
-        1,
-        MetricLoggerUnit.Count
-      );
-
-      const beforeGetQuotes = Date.now();
+      const v3RoutesFromCache: V3Route[] = v3Routes.map((cachedRoute) => cachedRoute.route as V3Route);
 
       quotePromises.push(
-        this.v3Quoter
-          .getQuotes(
-            v3RoutesFromCache,
-            amounts,
-            percents,
-            quoteToken,
-            tradeType,
-            routingConfig,
-            undefined,
-            v3GasModel
-          )
-          .then((result) => {
-            metric.putMetric(
-              `SwapRouteFromCache_V3_GetQuotes_Load`,
-              Date.now() - beforeGetQuotes,
-              MetricLoggerUnit.Milliseconds
-            );
-
-            return result;
-          })
+        this.v3Quoter.getQuotes(
+          v3RoutesFromCache,
+          amounts,
+          percents,
+          quoteToken,
+          tradeType,
+          routingConfig,
+          undefined,
+          v3GasModel
+        )
       );
     }
 
     if (v2Routes.length > 0) {
-      const v2RoutesFromCache: V2Route[] = v2Routes.map(
-        (cachedRoute) => cachedRoute.route as V2Route
-      );
-      metric.putMetric(
-        'SwapRouteFromCache_V2_GetQuotes_Request',
-        1,
-        MetricLoggerUnit.Count
-      );
-
-      const beforeGetQuotes = Date.now();
-
       quotePromises.push(
-        this.v2Quoter
-          .refreshRoutesThenGetQuotes(
-            cachedRoutes.tokenIn,
-            cachedRoutes.tokenOut,
-            v2RoutesFromCache,
-            amounts,
-            percents,
-            quoteToken,
-            tradeType,
-            routingConfig,
-            gasPriceWei
-          )
-          .then((result) => {
-            metric.putMetric(
-              `SwapRouteFromCache_V2_GetQuotes_Load`,
-              Date.now() - beforeGetQuotes,
-              MetricLoggerUnit.Milliseconds
-            );
-
-            return result;
-          })
+        // When we fetch the quotes in V2, we are not calling the `onChainProvider` like on v3Routes and mixedRoutes
+        // Instead we are using the reserves in the Pool object, so we need to re-load the current reserves.
+        this.v2Quoter.getRoutesThenQuotes(
+          v2Routes[0]!.tokenIn,
+          v2Routes[0]!.tokenOut,
+          amounts,
+          percents,
+          quoteToken,
+          tradeType,
+          routingConfig,
+          undefined,
+          gasPriceWei
+        )
       );
     }
 
     if (mixedRoutes.length > 0) {
-      const mixedRoutesFromCache: MixedRoute[] = mixedRoutes.map(
-        (cachedRoute) => cachedRoute.route as MixedRoute
-      );
-      metric.putMetric(
-        'SwapRouteFromCache_Mixed_GetQuotes_Request',
-        1,
-        MetricLoggerUnit.Count
-      );
-
-      const beforeGetQuotes = Date.now();
+      const mixedRoutesFromCache: MixedRoute[] = mixedRoutes.map((cachedRoute) => cachedRoute.route as MixedRoute);
 
       quotePromises.push(
-        this.mixedQuoter
-          .getQuotes(
-            mixedRoutesFromCache,
-            amounts,
-            percents,
-            quoteToken,
-            tradeType,
-            routingConfig,
-            undefined,
-            mixedRouteGasModel
-          )
-          .then((result) => {
-            metric.putMetric(
-              `SwapRouteFromCache_Mixed_GetQuotes_Load`,
-              Date.now() - beforeGetQuotes,
-              MetricLoggerUnit.Milliseconds
-            );
-
-            return result;
-          })
+        this.mixedQuoter.getQuotes(
+          mixedRoutesFromCache,
+          amounts,
+          percents,
+          quoteToken,
+          tradeType,
+          routingConfig,
+          undefined,
+          mixedRouteGasModel
+        )
       );
     }
 
     const getQuotesResults = await Promise.all(quotePromises);
-    const allRoutesWithValidQuotes = _.flatMap(
-      getQuotesResults,
-      (quoteResult) => quoteResult.routesWithValidQuotes
-    );
+    const allRoutesWithValidQuotes = _.flatMap(getQuotesResults, (quoteResult) => quoteResult.routesWithValidQuotes);
 
     return getBestSwapRoute(
       amount,
@@ -1707,10 +1280,7 @@ export class AlphaRouter
       tradeType,
       this.chainId,
       routingConfig,
-      this.portionProvider,
-      v2GasModel,
-      v3GasModel,
-      swapConfig
+      v3GasModel
     );
   }
 
@@ -1724,9 +1294,7 @@ export class AlphaRouter
     routingConfig: AlphaRouterConfig,
     v3GasModel: IGasModel<V3RouteWithValidQuote>,
     mixedRouteGasModel: IGasModel<MixedRouteWithValidQuote>,
-    gasPriceWei: BigNumber,
-    v2GasModel?: IGasModel<V2RouteWithValidQuote>,
-    swapConfig?: SwapOptions
+    gasPriceWei: BigNumber
   ): Promise<BestSwapRoute | null> {
     // Generate our distribution of amounts, i.e. fractions of the input amount.
     // We will get quotes for fractions of the input amount for different routes, then
@@ -1739,109 +1307,26 @@ export class AlphaRouter
     const noProtocolsSpecified = protocols.length === 0;
     const v3ProtocolSpecified = protocols.includes(Protocol.V3);
     const v2ProtocolSpecified = protocols.includes(Protocol.V2);
-    const v2SupportedInChain = this.v2Supported?.includes(this.chainId);
-    const shouldQueryMixedProtocol =
-      protocols.includes(Protocol.MIXED) ||
-      (noProtocolsSpecified && v2SupportedInChain);
-    const mixedProtocolAllowed =
-      [ChainId.MAINNET, ChainId.GOERLI].includes(this.chainId) &&
+    const v2SupportedInChain = V2_SUPPORTED.includes(this.chainId);
+    const shouldQueryMixedProtocol = protocols.includes(Protocol.MIXED) || (noProtocolsSpecified && v2SupportedInChain);
+    const mixedProtocolAllowed = [ChainId.MAINNET, ChainId.GOERLI].includes(this.chainId) &&
       tradeType === TradeType.EXACT_INPUT;
-
-    const beforeGetCandidates = Date.now();
-
-    let v3CandidatePoolsPromise: Promise<V3CandidatePools | undefined> =
-      Promise.resolve(undefined);
-    if (
-      v3ProtocolSpecified ||
-      noProtocolsSpecified ||
-      (shouldQueryMixedProtocol && mixedProtocolAllowed)
-    ) {
-      v3CandidatePoolsPromise = getV3CandidatePools({
-        tokenIn,
-        tokenOut,
-        tokenProvider: this.tokenProvider,
-        blockedTokenListProvider: this.blockedTokenListProvider,
-        poolProvider: this.v3PoolProvider,
-        routeType: tradeType,
-        subgraphProvider: this.v3SubgraphProvider,
-        routingConfig,
-        chainId: this.chainId,
-      }).then((candidatePools) => {
-        metric.putMetric(
-          'GetV3CandidatePools',
-          Date.now() - beforeGetCandidates,
-          MetricLoggerUnit.Milliseconds
-        );
-        return candidatePools;
-      });
-    }
-
-    let v2CandidatePoolsPromise: Promise<V2CandidatePools | undefined> =
-      Promise.resolve(undefined);
-    if (
-      (v2SupportedInChain && (v2ProtocolSpecified || noProtocolsSpecified)) ||
-      (shouldQueryMixedProtocol && mixedProtocolAllowed)
-    ) {
-      // Fetch all the pools that we will consider routing via. There are thousands
-      // of pools, so we filter them to a set of candidate pools that we expect will
-      // result in good prices.
-      v2CandidatePoolsPromise = getV2CandidatePools({
-        tokenIn,
-        tokenOut,
-        tokenProvider: this.tokenProvider,
-        blockedTokenListProvider: this.blockedTokenListProvider,
-        poolProvider: this.v2PoolProvider,
-        routeType: tradeType,
-        subgraphProvider: this.v2SubgraphProvider,
-        routingConfig,
-        chainId: this.chainId,
-      }).then((candidatePools) => {
-        metric.putMetric(
-          'GetV2CandidatePools',
-          Date.now() - beforeGetCandidates,
-          MetricLoggerUnit.Milliseconds
-        );
-        return candidatePools;
-      });
-    }
 
     const quotePromises: Promise<GetQuotesResult>[] = [];
 
     // Maybe Quote V3 - if V3 is specified, or no protocol is specified
     if (v3ProtocolSpecified || noProtocolsSpecified) {
       log.info({ protocols, tradeType }, 'Routing across V3');
-
-      metric.putMetric(
-        'SwapRouteFromChain_V3_GetRoutesThenQuotes_Request',
-        1,
-        MetricLoggerUnit.Count
-      );
-      const beforeGetRoutesThenQuotes = Date.now();
-
       quotePromises.push(
-        v3CandidatePoolsPromise.then((v3CandidatePools) =>
-          this.v3Quoter
-            .getRoutesThenQuotes(
-              tokenIn,
-              tokenOut,
-              amount,
-              amounts,
-              percents,
-              quoteToken,
-              v3CandidatePools!,
-              tradeType,
-              routingConfig,
-              v3GasModel
-            )
-            .then((result) => {
-              metric.putMetric(
-                `SwapRouteFromChain_V3_GetRoutesThenQuotes_Load`,
-                Date.now() - beforeGetRoutesThenQuotes,
-                MetricLoggerUnit.Milliseconds
-              );
-
-              return result;
-            })
+        this.v3Quoter.getRoutesThenQuotes(
+          tokenIn,
+          tokenOut,
+          amounts,
+          percents,
+          quoteToken,
+          tradeType,
+          routingConfig,
+          v3GasModel
         )
       );
     }
@@ -1849,39 +1334,17 @@ export class AlphaRouter
     // Maybe Quote V2 - if V2 is specified, or no protocol is specified AND v2 is supported in this chain
     if (v2SupportedInChain && (v2ProtocolSpecified || noProtocolsSpecified)) {
       log.info({ protocols, tradeType }, 'Routing across V2');
-
-      metric.putMetric(
-        'SwapRouteFromChain_V2_GetRoutesThenQuotes_Request',
-        1,
-        MetricLoggerUnit.Count
-      );
-      const beforeGetRoutesThenQuotes = Date.now();
-
       quotePromises.push(
-        v2CandidatePoolsPromise.then((v2CandidatePools) =>
-          this.v2Quoter
-            .getRoutesThenQuotes(
-              tokenIn,
-              tokenOut,
-              amount,
-              amounts,
-              percents,
-              quoteToken,
-              v2CandidatePools!,
-              tradeType,
-              routingConfig,
-              v2GasModel,
-              gasPriceWei
-            )
-            .then((result) => {
-              metric.putMetric(
-                `SwapRouteFromChain_V2_GetRoutesThenQuotes_Load`,
-                Date.now() - beforeGetRoutesThenQuotes,
-                MetricLoggerUnit.Milliseconds
-              );
-
-              return result;
-            })
+        this.v2Quoter.getRoutesThenQuotes(
+          tokenIn,
+          tokenOut,
+          amounts,
+          percents,
+          quoteToken,
+          tradeType,
+          routingConfig,
+          undefined,
+          gasPriceWei
         )
       );
     }
@@ -1891,39 +1354,16 @@ export class AlphaRouter
     // AND is Mainnet or Gorli
     if (shouldQueryMixedProtocol && mixedProtocolAllowed) {
       log.info({ protocols, tradeType }, 'Routing across MixedRoutes');
-
-      metric.putMetric(
-        'SwapRouteFromChain_Mixed_GetRoutesThenQuotes_Request',
-        1,
-        MetricLoggerUnit.Count
-      );
-      const beforeGetRoutesThenQuotes = Date.now();
-
       quotePromises.push(
-        Promise.all([v3CandidatePoolsPromise, v2CandidatePoolsPromise]).then(
-          ([v3CandidatePools, v2CandidatePools]) =>
-            this.mixedQuoter
-              .getRoutesThenQuotes(
-                tokenIn,
-                tokenOut,
-                amount,
-                amounts,
-                percents,
-                quoteToken,
-                [v3CandidatePools!, v2CandidatePools!],
-                tradeType,
-                routingConfig,
-                mixedRouteGasModel
-              )
-              .then((result) => {
-                metric.putMetric(
-                  `SwapRouteFromChain_Mixed_GetRoutesThenQuotes_Load`,
-                  Date.now() - beforeGetRoutesThenQuotes,
-                  MetricLoggerUnit.Milliseconds
-                );
-
-                return result;
-              })
+        this.mixedQuoter.getRoutesThenQuotes(
+          tokenIn,
+          tokenOut,
+          amounts,
+          percents,
+          quoteToken,
+          tradeType,
+          routingConfig,
+          mixedRouteGasModel
         )
       );
     }
@@ -1952,10 +1392,7 @@ export class AlphaRouter
       tradeType,
       this.chainId,
       routingConfig,
-      this.portionProvider,
-      v2GasModel,
-      v3GasModel,
-      swapConfig
+      v3GasModel
     );
 
     if (bestSwapRoute) {
@@ -1969,46 +1406,30 @@ export class AlphaRouter
     return tradeType === TradeType.EXACT_INPUT ? 'ExactIn' : 'ExactOut';
   }
 
-  private tokenPairSymbolTradeTypeChainId(
-    tokenIn: Token,
-    tokenOut: Token,
-    tradeType: TradeType
-  ) {
-    return `${tokenIn.symbol}/${tokenOut.symbol}/${this.tradeTypeStr(
-      tradeType
-    )}/${this.chainId}`;
+  private tokenPairSymbolTradeTypeChainId(tokenIn: Token, tokenOut: Token, tradeType: TradeType) {
+    return `${tokenIn.symbol}/${tokenOut.symbol}/${this.tradeTypeStr(tradeType)}/${this.chainId}`;
   }
 
-  private determineCurrencyInOutFromTradeType(
-    tradeType: TradeType,
-    amount: CurrencyAmount,
-    quoteCurrency: Currency
-  ) {
+  private determineCurrencyInOutFromTradeType(tradeType: TradeType, amount: CurrencyAmount, quoteCurrency: Currency) {
     if (tradeType === TradeType.EXACT_INPUT) {
       return {
         currencyIn: amount.currency,
-        currencyOut: quoteCurrency,
+        currencyOut: quoteCurrency
       };
     } else {
       return {
         currencyIn: quoteCurrency,
-        currencyOut: amount.currency,
+        currencyOut: amount.currency
       };
     }
   }
 
-  private async getGasPriceWei(
-    latestBlockNumber: number,
-    requestBlockNumber?: number
-  ): Promise<BigNumber> {
+  private async getGasPriceWei(): Promise<BigNumber> {
     // Track how long it takes to resolve this async call.
     const beforeGasTimestamp = Date.now();
 
     // Get an estimate of the gas price to use when estimating gas cost of different routes.
-    const { gasPriceWei } = await this.gasPriceProvider.getGasPrice(
-      latestBlockNumber,
-      requestBlockNumber
-    );
+    const { gasPriceWei } = await this.gasPriceProvider.getGasPrice();
 
     metric.putMetric(
       'GasPriceLoad',
@@ -2023,8 +1444,11 @@ export class AlphaRouter
     gasPriceWei: BigNumber,
     amountToken: Token,
     quoteToken: Token,
-    providerConfig?: GasModelProviderConfig
-  ): Promise<GasModelType> {
+    providerConfig?: ProviderConfig
+  ): Promise<[
+    IGasModel<V3RouteWithValidQuote>,
+    IGasModel<MixedRouteWithValidQuote>
+  ]> {
     const beforeGasModel = Date.now();
 
     const usdPoolPromise = getHighestLiquidityV3USDPool(
@@ -2033,64 +1457,28 @@ export class AlphaRouter
       providerConfig
     );
     const nativeCurrency = WRAPPED_NATIVE_CURRENCY[this.chainId];
-    const nativeAndQuoteTokenV3PoolPromise = !quoteToken.equals(nativeCurrency)
-      ? getHighestLiquidityV3NativePool(
-          quoteToken,
-          this.v3PoolProvider,
-          providerConfig
-        )
-      : Promise.resolve(null);
-    const nativeAndAmountTokenV3PoolPromise = !amountToken.equals(
-      nativeCurrency
-    )
-      ? getHighestLiquidityV3NativePool(
-          amountToken,
-          this.v3PoolProvider,
-          providerConfig
-        )
-      : Promise.resolve(null);
+    const nativeQuoteTokenV3PoolPromise = !quoteToken.equals(nativeCurrency) ? getHighestLiquidityV3NativePool(
+      quoteToken,
+      this.v3PoolProvider,
+      providerConfig
+    ) : Promise.resolve(null);
+    const nativeAmountTokenV3PoolPromise = !amountToken.equals(nativeCurrency) ? getHighestLiquidityV3NativePool(
+      amountToken,
+      this.v3PoolProvider,
+      providerConfig
+    ) : Promise.resolve(null);
 
-    // If a specific gas token is specified in the provider config
-    // fetch the highest liq V3 pool with it and the native currency
-    const nativeAndSpecifiedGasTokenV3PoolPromise =
-      providerConfig?.gasToken &&
-      !providerConfig?.gasToken.equals(nativeCurrency)
-        ? getHighestLiquidityV3NativePool(
-            providerConfig?.gasToken,
-            this.v3PoolProvider,
-            providerConfig
-          )
-        : Promise.resolve(null);
-
-    const [
-      usdPool,
-      nativeAndQuoteTokenV3Pool,
-      nativeAndAmountTokenV3Pool,
-      nativeAndSpecifiedGasTokenV3Pool,
-    ] = await Promise.all([
+    const [usdPool, nativeQuoteTokenV3Pool, nativeAmountTokenV3Pool] = await Promise.all([
       usdPoolPromise,
-      nativeAndQuoteTokenV3PoolPromise,
-      nativeAndAmountTokenV3PoolPromise,
-      nativeAndSpecifiedGasTokenV3PoolPromise,
+      nativeQuoteTokenV3PoolPromise,
+      nativeAmountTokenV3PoolPromise
     ]);
 
     const pools: LiquidityCalculationPools = {
       usdPool: usdPool,
-      nativeAndQuoteTokenV3Pool: nativeAndQuoteTokenV3Pool,
-      nativeAndAmountTokenV3Pool: nativeAndAmountTokenV3Pool,
-      nativeAndSpecifiedGasTokenV3Pool: nativeAndSpecifiedGasTokenV3Pool,
+      nativeQuoteTokenV3Pool: nativeQuoteTokenV3Pool,
+      nativeAmountTokenV3Pool: nativeAmountTokenV3Pool
     };
-
-    const v2GasModelPromise = this.v2Supported?.includes(this.chainId)
-      ? this.v2GasModelFactory.buildGasModel({
-          chainId: this.chainId,
-          gasPriceWei,
-          poolProvider: this.v2PoolProvider,
-          token: quoteToken,
-          l2GasDataProvider: this.l2GasDataProvider,
-          providerConfig: providerConfig,
-        }).catch(_ => undefined) // If v2 model throws uncaught exception, we return undefined v2 gas model, so there's a chance v3 route can go through
-      : Promise.resolve(undefined);
 
     const v3GasModelPromise = this.v3GasModelFactory.buildGasModel({
       chainId: this.chainId,
@@ -2100,24 +1488,22 @@ export class AlphaRouter
       quoteToken,
       v2poolProvider: this.v2PoolProvider,
       l2GasDataProvider: this.l2GasDataProvider,
-      providerConfig: providerConfig,
+      providerConfig: providerConfig
     });
 
-    const mixedRouteGasModelPromise =
-      this.mixedRouteGasModelFactory.buildGasModel({
-        chainId: this.chainId,
-        gasPriceWei,
-        pools,
-        amountToken,
-        quoteToken,
-        v2poolProvider: this.v2PoolProvider,
-        providerConfig: providerConfig,
-      });
+    const mixedRouteGasModelPromise = this.mixedRouteGasModelFactory.buildGasModel({
+      chainId: this.chainId,
+      gasPriceWei,
+      pools,
+      amountToken,
+      quoteToken,
+      v2poolProvider: this.v2PoolProvider,
+      providerConfig: providerConfig
+    });
 
-    const [v2GasModel, v3GasModel, mixedRouteGasModel] = await Promise.all([
-      v2GasModelPromise,
+    const [v3GasModel, mixedRouteGasModel] = await Promise.all([
       v3GasModelPromise,
-      mixedRouteGasModelPromise,
+      mixedRouteGasModelPromise
     ]);
 
     metric.putMetric(
@@ -2126,11 +1512,7 @@ export class AlphaRouter
       MetricLoggerUnit.Milliseconds
     );
 
-    return {
-      v2GasModel: v2GasModel,
-      v3GasModel: v3GasModel,
-      mixedRouteGasModel: mixedRouteGasModel,
-    } as GasModelType;
+    return [v3GasModel, mixedRouteGasModel];
   }
 
   // Note multiplications here can result in a loss of precision in the amounts (e.g. taking 50% of 101)
@@ -2384,8 +1766,7 @@ export class AlphaRouter
     quote: CurrencyAmount
   ): Promise<boolean> {
     try {
-      const neededBalance =
-        tradeType === TradeType.EXACT_INPUT ? amount : quote;
+      const neededBalance = tradeType === TradeType.EXACT_INPUT ? amount : quote;
       let balance;
       if (neededBalance.currency.isNative) {
         balance = await this.provider.getBalance(fromAddress);

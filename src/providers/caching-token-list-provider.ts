@@ -2,12 +2,19 @@
 import { ChainId, Token } from '@uniswap/sdk-core';
 import { TokenInfo, TokenList } from '@uniswap/token-lists';
 import axios from 'axios';
+import _ from 'lodash';
 
 import { log } from '../util/log';
 import { metric, MetricLoggerUnit } from '../util/metric';
 
 import { ICache } from './cache';
 import { ITokenProvider, TokenAccessor } from './token-provider';
+
+type StringToTokenInfo = { [index: string]: TokenInfo };
+
+// Use string for chain id to support unknown chains.
+type ChainToTokenInfoList = { [chainId: string]: TokenInfo[] };
+type TokenInfoMapping = { [chainId: string]: StringToTokenInfo };
 
 /**
  * Provider for getting token data from a Token List.
@@ -16,12 +23,7 @@ import { ITokenProvider, TokenAccessor } from './token-provider';
  * @interface ITokenListProvider
  */
 export interface ITokenListProvider {
-  hasTokenBySymbol(_symbol: string): Promise<boolean>;
-
   getTokenBySymbol(_symbol: string): Promise<Token | undefined>;
-
-  hasTokenByAddress(address: string): Promise<boolean>;
-
   getTokenByAddress(address: string): Promise<Token | undefined>;
 }
 
@@ -36,15 +38,10 @@ export class CachingTokenListProvider
     }/${tokenInfo.symbol}/${tokenInfo.name}`;
 
   private chainId: ChainId;
-  private chainToTokenInfos: Map<string, TokenInfo[]>;
-  private chainSymbolToTokenInfo: Map<string, TokenInfo>;
-  private chainAddressToTokenInfo: Map<string, TokenInfo>;
+  private chainToTokenInfos: ChainToTokenInfoList;
+  private chainSymbolToTokenInfo: TokenInfoMapping;
+  private chainAddressToTokenInfo: TokenInfoMapping;
   private tokenList: TokenList;
-
-  private CHAIN_SYMBOL_KEY = (chainId: ChainId, symbol: string) =>
-    `${chainId.toString()}/${symbol}`;
-  private CHAIN_ADDRESS_KEY = (chainId: ChainId, address: string) =>
-    `${chainId.toString()}/${address.toLowerCase()}`;
 
   /**
    * Creates an instance of CachingTokenListProvider.
@@ -62,30 +59,30 @@ export class CachingTokenListProvider
     this.chainId = chainId;
     this.tokenList = tokenList;
 
-    this.chainToTokenInfos = new Map();
-    this.chainSymbolToTokenInfo = new Map();
-    this.chainAddressToTokenInfo = new Map();
+    this.chainToTokenInfos = _.reduce(
+      this.tokenList.tokens,
+      (result: ChainToTokenInfoList, tokenInfo: TokenInfo) => {
+        const chainId = tokenInfo.chainId.toString();
+        if (!result[chainId]) {
+          result[chainId] = [];
+        }
+        result[chainId]!.push(tokenInfo);
 
-    for (const tokenInfo of this.tokenList.tokens) {
-      const chainId = tokenInfo.chainId;
-      const chainIdString = chainId.toString();
-      const symbol = tokenInfo.symbol;
-      const address = tokenInfo.address.toLowerCase();
+        return result;
+      },
+      {}
+    );
 
-      if (!this.chainToTokenInfos.has(chainIdString)) {
-        this.chainToTokenInfos.set(chainIdString, []);
-      }
-      this.chainToTokenInfos.get(chainIdString)!.push(tokenInfo);
+    this.chainSymbolToTokenInfo = _.mapValues(
+      this.chainToTokenInfos,
+      (tokenInfos: TokenInfo[]) => _.keyBy(tokenInfos, 'symbol')
+    );
 
-      this.chainSymbolToTokenInfo.set(
-        this.CHAIN_SYMBOL_KEY(chainId, symbol),
-        tokenInfo
-      );
-      this.chainAddressToTokenInfo.set(
-        this.CHAIN_ADDRESS_KEY(chainId, address),
-        tokenInfo
-      );
-    }
+    this.chainAddressToTokenInfo = _.mapValues(
+      this.chainToTokenInfos,
+      (tokenInfos: TokenInfo[]) =>
+        _.keyBy(tokenInfos, (tokenInfo) => tokenInfo.address.toLowerCase())
+    );
   }
 
   public static async fromTokenListURI(
@@ -148,54 +145,31 @@ export class CachingTokenListProvider
     return tokenProvider;
   }
 
-  /**
-   * If no addresses array is specified, all tokens in the token list are
-   * returned.
-   *
-   * @param _addresses (optional) The token addresses to get.
-   * @returns Promise<TokenAccessor> A token accessor with methods for accessing the tokens.
-   */
-  public async getTokens(_addresses?: string[]): Promise<TokenAccessor> {
-    const addressToToken: Map<string, Token> = new Map();
-    const symbolToToken: Map<string, Token> = new Map();
+  public async getTokens(_addresses: string[]): Promise<TokenAccessor> {
+    const addressToToken: { [address: string]: Token } = {};
+    const symbolToToken: { [symbol: string]: Token } = {};
 
-    const addToken = (token?: Token) => {
-      if (!token) return;
-      addressToToken.set(token.address.toLowerCase(), token);
-      if (token.symbol !== undefined) {
-        symbolToToken.set(token.symbol.toLowerCase(), token);
+    for (const address of _addresses) {
+      const token = await this.getTokenByAddress(address);
+      if (!token) {
+        continue;
       }
-    };
+      addressToToken[address.toLowerCase()] = token;
 
-    if (_addresses) {
-      for (const address of _addresses) {
-        const token = await this.getTokenByAddress(address);
-        addToken(token);
+      if (!token.symbol) {
+        continue;
       }
-    } else {
-      const chainTokens =
-        this.chainToTokenInfos.get(this.chainId.toString()) ?? [];
-      for (const info of chainTokens) {
-        const token = await this.buildToken(info);
-        addToken(token);
-      }
+      symbolToToken[token.symbol.toLowerCase()] = token;
     }
 
     return {
       getTokenByAddress: (address: string) =>
-        addressToToken.get(address.toLowerCase()),
-      getTokenBySymbol: (symbol: string) =>
-        symbolToToken.get(symbol.toLowerCase()),
+        addressToToken[address.toLowerCase()],
+      getTokenBySymbol: (symbol: string) => symbolToToken[symbol.toLowerCase()],
       getAllTokens: (): Token[] => {
-        return Array.from(addressToToken.values());
+        return Object.values(addressToToken);
       },
     };
-  }
-
-  public async hasTokenBySymbol(_symbol: string): Promise<boolean> {
-    return this.chainSymbolToTokenInfo.has(
-      this.CHAIN_SYMBOL_KEY(this.chainId, _symbol)
-    );
   }
 
   public async getTokenBySymbol(_symbol: string): Promise<Token | undefined> {
@@ -207,9 +181,12 @@ export class CachingTokenListProvider
       symbol = 'WETH';
     }
 
-    const tokenInfo = this.chainSymbolToTokenInfo.get(
-      this.CHAIN_SYMBOL_KEY(this.chainId, symbol)
-    );
+    if (!this.chainSymbolToTokenInfo[this.chainId.toString()]) {
+      return undefined;
+    }
+
+    const tokenInfo: TokenInfo | undefined =
+      this.chainSymbolToTokenInfo[this.chainId.toString()]![symbol];
 
     if (!tokenInfo) {
       return undefined;
@@ -220,16 +197,15 @@ export class CachingTokenListProvider
     return token;
   }
 
-  public async hasTokenByAddress(address: string): Promise<boolean> {
-    return this.chainAddressToTokenInfo.has(
-      this.CHAIN_ADDRESS_KEY(this.chainId, address)
-    );
-  }
-
   public async getTokenByAddress(address: string): Promise<Token | undefined> {
-    const tokenInfo = this.chainAddressToTokenInfo.get(
-      this.CHAIN_ADDRESS_KEY(this.chainId, address)
-    );
+    if (!this.chainAddressToTokenInfo[this.chainId.toString()]) {
+      return undefined;
+    }
+
+    const tokenInfo: TokenInfo | undefined =
+      this.chainAddressToTokenInfo[this.chainId.toString()]![
+        address.toLowerCase()
+      ];
 
     if (!tokenInfo) {
       return undefined;

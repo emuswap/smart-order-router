@@ -6,7 +6,7 @@ import {
 } from '@uniswap/router-sdk';
 import { ChainId, Currency, TradeType } from '@uniswap/sdk-core';
 import {
-  SwapRouter as UniversalRouter,
+  SwapRouter as UniveralRouter,
   UNIVERSAL_ROUTER_ADDRESS,
 } from '@uniswap/universal-router-sdk';
 import { Route as V2RouteRaw } from '@uniswap/v2-sdk';
@@ -18,9 +18,9 @@ import {
   MethodParameters,
   MixedRouteWithValidQuote,
   RouteWithValidQuote,
+  SWAP_ROUTER_02_ADDRESSES,
   SwapOptions,
   SwapType,
-  SWAP_ROUTER_02_ADDRESSES,
   V2RouteWithValidQuote,
   V3RouteWithValidQuote,
 } from '..';
@@ -235,7 +235,7 @@ export function buildSwapMethodParameters(
 ): MethodParameters {
   if (swapConfig.type == SwapType.UNIVERSAL_ROUTER) {
     return {
-      ...UniversalRouter.swapERC20CallParameters(trade, swapConfig),
+      ...UniveralRouter.swapERC20CallParameters(trade, swapConfig),
       to: UNIVERSAL_ROUTER_ADDRESS(chainId),
     };
   } else if (swapConfig.type == SwapType.SWAP_ROUTER_02) {

@@ -14,7 +14,7 @@ import stats from 'stats-lite';
 import { MixedRoute, V2Route, V3Route } from '../routers/router';
 import { IMixedRouteQuoterV1__factory } from '../types/other/factories/IMixedRouteQuoterV1__factory';
 import { IQuoterV2__factory } from '../types/v3/factories/IQuoterV2__factory';
-import { ID_TO_NETWORK_NAME, metric, MetricLoggerUnit } from '../util';
+import { metric, MetricLoggerUnit } from '../util';
 import {
   MIXED_ROUTE_QUOTER_V1_ADDRESSES,
   QUOTER_V2_ADDRESSES,
@@ -55,7 +55,6 @@ export type AmountQuote = {
 export class BlockConflictError extends Error {
   public name = 'BlockConflictError';
 }
-
 export class SuccessRateError extends Error {
   public name = 'SuccessRateError';
 }
@@ -418,13 +417,6 @@ export class OnChainQuoteProvider implements IOnChainQuoteProvider {
           ? `with a gas limit override of ${gasLimitOverride}`
           : ''
       } and block number: ${await providerConfig.blockNumber} [Original before offset: ${originalBlockNumber}].`
-    );
-
-    metric.putMetric('QuoteBatchSize', inputs.length, MetricLoggerUnit.Count);
-    metric.putMetric(
-      `QuoteBatchSize_${ID_TO_NETWORK_NAME(this.chainId)}`,
-      inputs.length,
-      MetricLoggerUnit.Count
     );
 
     let haveRetriedForSuccessRate = false;

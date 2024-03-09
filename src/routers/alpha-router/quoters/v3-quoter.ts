@@ -1,4 +1,3 @@
-import { Protocol } from '@uniswap/router-sdk';
 import { ChainId, Currency, Token, TradeType } from '@uniswap/sdk-core';
 import _ from 'lodash';
 
@@ -9,30 +8,21 @@ import {
   ITokenValidatorProvider,
   IV3PoolProvider,
   IV3SubgraphProvider,
-  TokenValidationResult,
+  TokenValidationResult
 } from '../../../providers';
-import {
-  CurrencyAmount,
-  log,
-  metric,
-  MetricLoggerUnit,
-  routeToString,
-} from '../../../util';
+import { CurrencyAmount, log, metric, MetricLoggerUnit, routeToString } from '../../../util';
 import { V3Route } from '../../router';
 import { AlphaRouterConfig } from '../alpha-router';
 import { V3RouteWithValidQuote } from '../entities';
 import { computeAllV3Routes } from '../functions/compute-all-routes';
-import {
-  CandidatePoolsBySelectionCriteria,
-  V3CandidatePools,
-} from '../functions/get-candidate-pools';
+import { CandidatePoolsBySelectionCriteria, getV3CandidatePools } from '../functions/get-candidate-pools';
 import { IGasModel } from '../gas-models';
 
 import { BaseQuoter } from './base-quoter';
 import { GetQuotesResult } from './model/results/get-quotes-result';
 import { GetRoutesResult } from './model/results/get-routes-result';
 
-export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
+export class V3Quoter extends BaseQuoter<V3Route> {
   protected v3SubgraphProvider: IV3SubgraphProvider;
   protected v3PoolProvider: IV3PoolProvider;
   protected onChainQuoteProvider: IOnChainQuoteProvider;
@@ -46,13 +36,7 @@ export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
     blockedTokenListProvider?: ITokenListProvider,
     tokenValidatorProvider?: ITokenValidatorProvider
   ) {
-    super(
-      tokenProvider,
-      chainId,
-      Protocol.V3,
-      blockedTokenListProvider,
-      tokenValidatorProvider
-    );
+    super(tokenProvider, chainId, blockedTokenListProvider, tokenValidatorProvider);
     this.v3SubgraphProvider = v3SubgraphProvider;
     this.v3PoolProvider = v3PoolProvider;
     this.onChainQuoteProvider = onChainQuoteProvider;
@@ -61,15 +45,23 @@ export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
   protected async getRoutes(
     tokenIn: Token,
     tokenOut: Token,
-    v3CandidatePools: V3CandidatePools,
-    _tradeType: TradeType,
+    tradeType: TradeType,
     routingConfig: AlphaRouterConfig
   ): Promise<GetRoutesResult<V3Route>> {
-    const beforeGetRoutes = Date.now();
     // Fetch all the pools that we will consider routing via. There are thousands
     // of pools, so we filter them to a set of candidate pools that we expect will
     // result in good prices.
-    const { poolAccessor, candidatePools } = v3CandidatePools;
+    const { poolAccessor, candidatePools } = await getV3CandidatePools({
+      tokenIn,
+      tokenOut,
+      tokenProvider: this.tokenProvider,
+      blockedTokenListProvider: this.blockedTokenListProvider,
+      poolProvider: this.v3PoolProvider,
+      routeType: tradeType,
+      subgraphProvider: this.v3SubgraphProvider,
+      routingConfig,
+      chainId: this.chainId,
+    });
     const poolsRaw = poolAccessor.getAllPools();
 
     // Drop any pools that contain fee on transfer tokens (not supported by v3) or have issues with being transferred.
@@ -112,12 +104,6 @@ export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
       maxSwapsPerPath
     );
 
-    metric.putMetric(
-      'V3GetRoutesLoad',
-      Date.now() - beforeGetRoutes,
-      MetricLoggerUnit.Milliseconds
-    );
-
     return {
       routes,
       candidatePools,
@@ -134,13 +120,10 @@ export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
     candidatePools?: CandidatePoolsBySelectionCriteria,
     gasModel?: IGasModel<V3RouteWithValidQuote>
   ): Promise<GetQuotesResult> {
-    const beforeGetQuotes = Date.now();
     log.info('Starting to get V3 quotes');
 
     if (gasModel === undefined) {
-      throw new Error(
-        'GasModel for V3RouteWithValidQuote is required to getQuotes'
-      );
+      throw new Error('GasModel for V3RouteWithValidQuote is required to getQuotes');
     }
 
     if (routes.length == 0) {
@@ -151,11 +134,11 @@ export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
     const quoteFn =
       tradeType == TradeType.EXACT_INPUT
         ? this.onChainQuoteProvider.getQuotesManyExactIn.bind(
-            this.onChainQuoteProvider
-          )
+          this.onChainQuoteProvider
+        )
         : this.onChainQuoteProvider.getQuotesManyExactOut.bind(
-            this.onChainQuoteProvider
-          );
+          this.onChainQuoteProvider
+        );
 
     const beforeQuotes = Date.now();
     log.info(
@@ -230,15 +213,9 @@ export class V3Quoter extends BaseQuoter<V3CandidatePools, V3Route> {
       }
     }
 
-    metric.putMetric(
-      'V3GetQuotesLoad',
-      Date.now() - beforeGetQuotes,
-      MetricLoggerUnit.Milliseconds
-    );
-
     return {
       routesWithValidQuotes,
-      candidatePools,
+      candidatePools
     };
   }
 }

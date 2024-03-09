@@ -4,9 +4,8 @@ import { ChainId } from '@uniswap/sdk-core';
 
 import { GasDataArbitrum__factory } from '../../types/other/factories/GasDataArbitrum__factory';
 import { GasPriceOracle__factory } from '../../types/other/factories/GasPriceOracle__factory';
-import { ARB_GASINFO_ADDRESS, log, OVM_GASPRICE_ADDRESS } from '../../util';
+import { ARB_GASINFO_ADDRESS, log, OVM_GASPRICE_ADDRESS, } from '../../util';
 import { IMulticallProvider } from '../multicall-provider';
-import { ProviderConfig } from '../provider';
 
 /**
  * Provider for getting gas constants on L2s.
@@ -19,7 +18,7 @@ export interface IL2GasDataProvider<T> {
    * Gets the data constants needed to calculate the l1 security fee on L2s like arbitrum and optimism.
    * @returns An object that includes the data necessary for the off chain estimations.
    */
-  getGasData(providerConfig?: ProviderConfig): Promise<T>;
+  getGasData(): Promise<T>;
 }
 
 export type OptimismGasData = {
@@ -30,8 +29,7 @@ export type OptimismGasData = {
 };
 
 export class OptimismGasDataProvider
-  implements IL2GasDataProvider<OptimismGasData>
-{
+  implements IL2GasDataProvider<OptimismGasData> {
   protected gasOracleAddress: string;
 
   constructor(
@@ -50,10 +48,7 @@ export class OptimismGasDataProvider
    * @returns An OptimismGasData object that includes the l1BaseFee,
    * scalar, decimals, and overhead values.
    */
-  public async getGasData(
-    providerConfig?: ProviderConfig
-  ): Promise<OptimismGasData> {
-    // TODO: Also get the gasPrice from GasPriceOracle.sol
+  public async getGasData(): Promise<OptimismGasData> {
     const funcNames = ['l1BaseFee', 'scalar', 'decimals', 'overhead'];
     const tx =
       await this.multicall2Provider.callMultipleFunctionsOnSameContract<
@@ -63,7 +58,6 @@ export class OptimismGasDataProvider
         address: this.gasOracleAddress,
         contractInterface: GasPriceOracle__factory.createInterface(),
         functionNames: funcNames,
-        providerConfig: providerConfig,
       });
 
     if (
@@ -107,8 +101,7 @@ export type ArbitrumGasData = {
 };
 
 export class ArbitrumGasDataProvider
-  implements IL2GasDataProvider<ArbitrumGasData>
-{
+  implements IL2GasDataProvider<ArbitrumGasData> {
   protected gasFeesAddress: string;
   protected blockNumberOverride: number | Promise<number> | undefined;
 
@@ -120,18 +113,15 @@ export class ArbitrumGasDataProvider
     this.gasFeesAddress = gasDataAddress ? gasDataAddress : ARB_GASINFO_ADDRESS;
   }
 
-  public async getGasData(providerConfig?: ProviderConfig) {
+  public async getGasData() {
     const gasDataContract = GasDataArbitrum__factory.connect(
       this.gasFeesAddress,
       this.provider
     );
-    const gasData = await gasDataContract.getPricesInWei({
-      blockTag: providerConfig?.blockNumber,
-    });
-    const perL1CalldataByte = gasData[1];
+    const gasData = await gasDataContract.getPricesInWei();
     return {
       perL2TxFee: gasData[0],
-      perL1CalldataFee: perL1CalldataByte.div(16),
+      perL1CalldataFee: gasData[1],
       perArbGasTotal: gasData[5],
     };
   }

@@ -2,19 +2,13 @@ import { BigNumber } from '@ethersproject/bignumber';
 import { JsonRpcProvider } from '@ethersproject/providers';
 import { ChainId } from '@uniswap/sdk-core';
 
-import {
-  GasModelProviderConfig,
-  SwapOptions,
-  SwapRoute,
-  SwapType,
-} from '../routers';
-import { BEACON_CHAIN_DEPOSIT_ADDRESS, log } from '../util';
+import { SwapOptions, SwapRoute, SwapType } from '../routers';
+import { log } from '../util';
 import {
   calculateGasUsed,
   initSwapRouteFromExisting,
 } from '../util/gas-factory-helpers';
 
-import { IPortionProvider } from './portion-provider';
 import { ProviderConfig } from './provider';
 import { SimulationStatus, Simulator } from './simulation-provider';
 import { IV2PoolProvider } from './v2/pool-provider';
@@ -34,10 +28,9 @@ export class EthEstimateGasSimulator extends Simulator {
     provider: JsonRpcProvider,
     v2PoolProvider: IV2PoolProvider,
     v3PoolProvider: IV3PoolProvider,
-    portionProvider: IPortionProvider,
     overrideEstimateMultiplier?: { [chainId in ChainId]?: number }
   ) {
-    super(provider, portionProvider, chainId);
+    super(provider, chainId);
     this.v2PoolProvider = v2PoolProvider;
     this.v3PoolProvider = v3PoolProvider;
     this.overrideEstimateMultiplier = overrideEstimateMultiplier ?? {};
@@ -53,14 +46,8 @@ export class EthEstimateGasSimulator extends Simulator {
     const currencyIn = route.trade.inputAmount.currency;
     let estimatedGasUsed: BigNumber;
     if (swapOptions.type == SwapType.UNIVERSAL_ROUTER) {
-      if (currencyIn.isNative && this.chainId == ChainId.MAINNET) {
-        // w/o this gas estimate differs by a lot depending on if user holds enough native balance
-        // always estimate gas as if user holds enough balance
-        // so that gas estimate is consistent for UniswapX
-        fromAddress = BEACON_CHAIN_DEPOSIT_ADDRESS;
-      }
       log.info(
-        { addr: fromAddress, methodParameters: route.methodParameters },
+        { methodParameters: route.methodParameters },
         'Simulating using eth_estimateGas on Universal Router'
       );
       try {
@@ -112,7 +99,6 @@ export class EthEstimateGasSimulator extends Simulator {
     const {
       estimatedGasUsedUSD,
       estimatedGasUsedQuoteToken,
-      estimatedGasUsedGasToken,
       quoteGasAdjusted,
     } = await calculateGasUsed(
       route.quote.currency.chainId,
@@ -123,18 +109,16 @@ export class EthEstimateGasSimulator extends Simulator {
       l2GasData,
       providerConfig
     );
+
     return {
       ...initSwapRouteFromExisting(
         route,
         this.v2PoolProvider,
         this.v3PoolProvider,
-        this.portionProvider,
         quoteGasAdjusted,
         estimatedGasUsed,
         estimatedGasUsedQuoteToken,
-        estimatedGasUsedUSD,
-        swapOptions,
-        estimatedGasUsedGasToken
+        estimatedGasUsedUSD
       ),
       simulationStatus: SimulationStatus.Succeeded,
     };
@@ -157,7 +141,8 @@ export class EthEstimateGasSimulator extends Simulator {
     swapOptions: SwapOptions,
     swapRoute: SwapRoute,
     l2GasData?: OptimismGasData | ArbitrumGasData | undefined,
-    _providerConfig?: GasModelProviderConfig | undefined
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _providerConfig?: ProviderConfig | undefined
   ): Promise<SwapRoute> {
     const inputAmount = swapRoute.trade.inputAmount;
     if (

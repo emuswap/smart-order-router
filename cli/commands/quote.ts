@@ -34,10 +34,6 @@ export class Quote extends BaseCommand {
       default: false,
     }),
     simulate: flags.boolean({ required: false, default: false }),
-    debugRouting: flags.boolean({ required: false, default: true }),
-    enableFeeOnTransferFeeFetching: flags.boolean({ required: false, default: false }),
-    requestBlockNumber: flags.integer({ required: false }),
-    gasToken: flags.string({ required: false }),
   };
 
   async run() {
@@ -67,10 +63,6 @@ export class Quote extends BaseCommand {
       forceCrossProtocol,
       forceMixedRoutes,
       simulate,
-      debugRouting,
-      enableFeeOnTransferFeeFetching,
-      requestBlockNumber,
-      gasToken
     } = flags;
 
     const topNSecondHopForTokenAddress = new MapWithLowerCaseKey();
@@ -141,7 +133,7 @@ export class Quote extends BaseCommand {
           }
           : undefined,
         {
-          blockNumber: requestBlockNumber ?? this.blockNumber,
+          blockNumber: this.blockNumber,
           v3PoolSelection: {
             topN,
             topNTokenInOut,
@@ -159,9 +151,6 @@ export class Quote extends BaseCommand {
           protocols,
           forceCrossProtocol,
           forceMixedRoutes,
-          debugRouting,
-          enableFeeOnTransferFeeFetching,
-          gasToken
         }
       );
     } else {
@@ -197,9 +186,6 @@ export class Quote extends BaseCommand {
           protocols,
           forceCrossProtocol,
           forceMixedRoutes,
-          debugRouting,
-          enableFeeOnTransferFeeFetching,
-          gasToken
         }
       );
     }
@@ -218,7 +204,6 @@ export class Quote extends BaseCommand {
       estimatedGasUsed,
       estimatedGasUsedQuoteToken,
       estimatedGasUsedUSD,
-      estimatedGasUsedGasToken,
       gasPriceWei,
       methodParameters,
       quote,
@@ -233,7 +218,6 @@ export class Quote extends BaseCommand {
       quoteGasAdjusted,
       estimatedGasUsedQuoteToken,
       estimatedGasUsedUSD,
-      estimatedGasUsedGasToken,
       methodParameters,
       blockNumber,
       estimatedGasUsed,

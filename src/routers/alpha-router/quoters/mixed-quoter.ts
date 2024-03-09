@@ -1,4 +1,3 @@
-import { Protocol } from '@uniswap/router-sdk';
 import { ChainId, Currency, Token, TradeType } from '@uniswap/sdk-core';
 import _ from 'lodash';
 
@@ -11,34 +10,20 @@ import {
   IV2SubgraphProvider,
   IV3PoolProvider,
   IV3SubgraphProvider,
-  TokenValidationResult,
+  TokenValidationResult
 } from '../../../providers';
-import {
-  CurrencyAmount,
-  log,
-  metric,
-  MetricLoggerUnit,
-  routeToString,
-} from '../../../util';
+import { CurrencyAmount, log, metric, MetricLoggerUnit, routeToString } from '../../../util';
 import { MixedRoute } from '../../router';
 import { AlphaRouterConfig } from '../alpha-router';
 import { MixedRouteWithValidQuote } from '../entities';
 import { computeAllMixedRoutes } from '../functions/compute-all-routes';
-import {
-  CandidatePoolsBySelectionCriteria,
-  getMixedRouteCandidatePools,
-  V2CandidatePools,
-  V3CandidatePools,
-} from '../functions/get-candidate-pools';
+import { CandidatePoolsBySelectionCriteria, getMixedRouteCandidatePools } from '../functions/get-candidate-pools';
 import { IGasModel } from '../gas-models';
 
 import { BaseQuoter } from './base-quoter';
 import { GetQuotesResult, GetRoutesResult } from './model';
 
-export class MixedQuoter extends BaseQuoter<
-  [V3CandidatePools, V2CandidatePools],
-  MixedRoute
-> {
+export class MixedQuoter extends BaseQuoter<MixedRoute> {
   protected v3SubgraphProvider: IV3SubgraphProvider;
   protected v3PoolProvider: IV3PoolProvider;
   protected v2SubgraphProvider: IV2SubgraphProvider;
@@ -56,13 +41,7 @@ export class MixedQuoter extends BaseQuoter<
     blockedTokenListProvider?: ITokenListProvider,
     tokenValidatorProvider?: ITokenValidatorProvider
   ) {
-    super(
-      tokenProvider,
-      chainId,
-      Protocol.MIXED,
-      blockedTokenListProvider,
-      tokenValidatorProvider
-    );
+    super(tokenProvider, chainId, blockedTokenListProvider, tokenValidatorProvider);
     this.v3SubgraphProvider = v3SubgraphProvider;
     this.v3PoolProvider = v3PoolProvider;
     this.v2SubgraphProvider = v2SubgraphProvider;
@@ -73,28 +52,27 @@ export class MixedQuoter extends BaseQuoter<
   protected async getRoutes(
     tokenIn: Token,
     tokenOut: Token,
-    v3v2candidatePools: [V3CandidatePools, V2CandidatePools],
     tradeType: TradeType,
     routingConfig: AlphaRouterConfig
   ): Promise<GetRoutesResult<MixedRoute>> {
-    const beforeGetRoutes = Date.now();
-
     if (tradeType != TradeType.EXACT_INPUT) {
       throw new Error('Mixed route quotes are not supported for EXACT_OUTPUT');
     }
-
-    const [v3CandidatePools, v2CandidatePools] = v3v2candidatePools;
 
     const {
       V2poolAccessor,
       V3poolAccessor,
       candidatePools: mixedRouteCandidatePools,
     } = await getMixedRouteCandidatePools({
-      v3CandidatePools,
-      v2CandidatePools,
+      tokenIn,
+      tokenOut,
       tokenProvider: this.tokenProvider,
+      blockedTokenListProvider: this.blockedTokenListProvider,
       v3poolProvider: this.v3PoolProvider,
       v2poolProvider: this.v2PoolProvider,
+      routeType: tradeType,
+      v3subgraphProvider: this.v3SubgraphProvider,
+      v2subgraphProvider: this.v2SubgraphProvider,
       routingConfig,
       chainId: this.chainId,
     });
@@ -146,15 +124,9 @@ export class MixedQuoter extends BaseQuoter<
       maxSwapsPerPath
     );
 
-    metric.putMetric(
-      'MixedGetRoutesLoad',
-      Date.now() - beforeGetRoutes,
-      MetricLoggerUnit.Milliseconds
-    );
-
     return {
       routes,
-      candidatePools,
+      candidatePools
     };
   }
 
@@ -168,12 +140,9 @@ export class MixedQuoter extends BaseQuoter<
     candidatePools?: CandidatePoolsBySelectionCriteria,
     gasModel?: IGasModel<MixedRouteWithValidQuote>
   ): Promise<GetQuotesResult> {
-    const beforeGetQuotes = Date.now();
     log.info('Starting to get mixed quotes');
     if (gasModel === undefined) {
-      throw new Error(
-        'GasModel for MixedRouteWithValidQuote is required to getQuotes'
-      );
+      throw new Error('GasModel for MixedRouteWithValidQuote is required to getQuotes');
     }
     if (routes.length == 0) {
       return { routesWithValidQuotes: [], candidatePools };
@@ -258,15 +227,10 @@ export class MixedQuoter extends BaseQuoter<
       }
     }
 
-    metric.putMetric(
-      'MixedGetQuotesLoad',
-      Date.now() - beforeGetQuotes,
-      MetricLoggerUnit.Milliseconds
-    );
-
     return {
       routesWithValidQuotes,
-      candidatePools,
+      candidatePools
     };
   }
+
 }

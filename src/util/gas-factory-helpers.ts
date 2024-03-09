@@ -1,50 +1,34 @@
 import { BigNumber } from '@ethersproject/bignumber';
 import { Protocol } from '@uniswap/router-sdk';
-import { ChainId, Percent, Token, TradeType } from '@uniswap/sdk-core';
+import { ChainId, Currency, CurrencyAmount, Token, TradeType } from '@uniswap/sdk-core';
+import { Pair } from '@uniswap/v2-sdk/dist/entities';
 import { FeeAmount, Pool } from '@uniswap/v3-sdk';
-import brotli from 'brotli';
-import JSBI from 'jsbi';
 import _ from 'lodash';
 
 import { IV2PoolProvider } from '../providers';
-import { IPortionProvider } from '../providers/portion-provider';
-import {
-  ArbitrumGasData,
-  OptimismGasData,
-} from '../providers/v3/gas-data-provider';
+import { ProviderConfig } from '../providers/provider';
+import { ArbitrumGasData, OptimismGasData, } from '../providers/v3/gas-data-provider';
 import { IV3PoolProvider } from '../providers/v3/pool-provider';
 import {
-  GasModelProviderConfig,
-  getQuoteThroughNativePool,
   MethodParameters,
   MixedRouteWithValidQuote,
-  RouteWithValidQuote,
-  SwapOptions,
-  SwapOptionsUniversalRouter,
   SwapRoute,
-  SwapType,
   usdGasTokensByChain,
   V2RouteWithValidQuote,
   V3RouteWithValidQuote,
 } from '../routers';
-import { CurrencyAmount, log, WRAPPED_NATIVE_CURRENCY } from '../util';
+import { log, WRAPPED_NATIVE_CURRENCY } from '../util';
 
-import { Pair } from '@uniswap/v2-sdk';
-import { opStackChains } from './l2FeeChains';
-import { buildSwapMethodParameters, buildTrade } from './methodParameters';
+import { buildTrade } from './methodParameters';
 
 export async function getV2NativePool(
   token: Token,
-  poolProvider: IV2PoolProvider,
-  providerConfig?: GasModelProviderConfig
+  poolProvider: IV2PoolProvider
 ): Promise<Pair | null> {
   const chainId = token.chainId as ChainId;
   const weth = WRAPPED_NATIVE_CURRENCY[chainId]!;
 
-  const poolAccessor = await poolProvider.getPools(
-    [[weth, token]],
-    providerConfig
-  );
+  const poolAccessor = await poolProvider.getPools([[weth, token]]);
   const pool = poolAccessor.getPool(weth, token);
 
   if (!pool || pool.reserve0.equalTo(0) || pool.reserve1.equalTo(0)) {
@@ -67,7 +51,7 @@ export async function getV2NativePool(
 export async function getHighestLiquidityV3NativePool(
   token: Token,
   poolProvider: IV3PoolProvider,
-  providerConfig?: GasModelProviderConfig
+  providerConfig?: ProviderConfig
 ): Promise<Pool | null> {
   const nativeCurrency = WRAPPED_NATIVE_CURRENCY[token.chainId as ChainId]!;
 
@@ -105,9 +89,7 @@ export async function getHighestLiquidityV3NativePool(
     return null;
   }
 
-  const maxPool = pools.reduce((prev, current) => {
-    return JSBI.greaterThan(prev.liquidity, current.liquidity) ? prev : current;
-  });
+  const maxPool = _.maxBy(pools, (pool) => pool.liquidity) as Pool;
 
   return maxPool;
 }
@@ -115,14 +97,14 @@ export async function getHighestLiquidityV3NativePool(
 export async function getHighestLiquidityV3USDPool(
   chainId: ChainId,
   poolProvider: IV3PoolProvider,
-  providerConfig?: GasModelProviderConfig
+  providerConfig?: ProviderConfig
 ): Promise<Pool> {
   const usdTokens = usdGasTokensByChain[chainId];
   const wrappedCurrency = WRAPPED_NATIVE_CURRENCY[chainId]!;
 
   if (!usdTokens) {
     throw new Error(
-      `Could not find a USD token for computing gas costs on ${chainId}`
+      `gas-factory-helpers: Could not find a USD token for computing gas costs on ${chainId}`
     );
   }
 
@@ -170,11 +152,24 @@ export async function getHighestLiquidityV3USDPool(
     throw new Error(message);
   }
 
-  const maxPool = pools.reduce((prev, current) => {
-    return JSBI.greaterThan(prev.liquidity, current.liquidity) ? prev : current;
-  });
+  const maxPool = _.maxBy(pools, (pool) => pool.liquidity) as Pool;
 
   return maxPool;
+}
+
+export function getGasCostInUSD(
+  usdPool: Pool,
+  costNativeCurrency: CurrencyAmount<Token>
+) {
+  const nativeCurrency = costNativeCurrency.currency;
+  // convert fee into usd
+  const nativeTokenPrice =
+    usdPool.token0.address == nativeCurrency.address
+      ? usdPool.token0Price
+      : usdPool.token1Price;
+
+  const gasCostUSD = nativeTokenPrice.quote(costNativeCurrency);
+  return gasCostUSD;
 }
 
 export function getGasCostInNativeCurrency(
@@ -189,46 +184,39 @@ export function getGasCostInNativeCurrency(
   return costNativeCurrency;
 }
 
-export function getArbitrumBytes(data: string): BigNumber {
-  if (data == '') return BigNumber.from(0);
-  const compressed = brotli.compress(
-    Buffer.from(data.replace('0x', ''), 'hex'),
-    {
-      mode: 0,
-      quality: 1,
-      lgwin: 22,
-    }
-  );
-  // TODO: This is a rough estimate of the compressed size
-  // Brotli 0 should be used, but this brotli library doesn't support it
-  // https://github.com/foliojs/brotli.js/issues/38
-  // There are other brotli libraries that do support it, but require async
-  // We workaround by using Brotli 1 with a 20% bump in size
-  return BigNumber.from(compressed.length).mul(120).div(100);
+export async function getGasCostInQuoteToken(
+  quoteToken: Token,
+  nativePool: Pool | Pair,
+  costNativeCurrency: CurrencyAmount<Token>
+) {
+  const nativeTokenPrice =
+    nativePool.token0.address == quoteToken.address
+      ? nativePool.token1Price
+      : nativePool.token0Price;
+  const gasCostQuoteToken = nativeTokenPrice.quote(costNativeCurrency);
+  return gasCostQuoteToken;
 }
 
 export function calculateArbitrumToL1FeeFromCalldata(
   calldata: string,
-  gasData: ArbitrumGasData,
-  chainId: ChainId
-): [BigNumber, BigNumber, BigNumber] {
-  const { perL2TxFee, perL1CalldataFee, perArbGasTotal } = gasData;
+  gasData: ArbitrumGasData
+): [BigNumber, BigNumber] {
+  const { perL2TxFee, perL1CalldataFee } = gasData;
   // calculates gas amounts based on bytes of calldata, use 0 as overhead.
-  const l1GasUsed = getL2ToL1GasUsed(calldata, BigNumber.from(0), chainId);
+  const l1GasUsed = getL2ToL1GasUsed(calldata, BigNumber.from(0));
   // multiply by the fee per calldata and add the flat l2 fee
-  const l1Fee = l1GasUsed.mul(perL1CalldataFee).add(perL2TxFee);
-  const gasUsedL1OnL2 = l1Fee.div(perArbGasTotal);
-  return [l1GasUsed, l1Fee, gasUsedL1OnL2];
+  let l1Fee = l1GasUsed.mul(perL1CalldataFee);
+  l1Fee = l1Fee.add(perL2TxFee);
+  return [l1GasUsed, l1Fee];
 }
 
 export function calculateOptimismToL1FeeFromCalldata(
   calldata: string,
-  gasData: OptimismGasData,
-  chainId: ChainId
+  gasData: OptimismGasData
 ): [BigNumber, BigNumber] {
   const { l1BaseFee, scalar, decimals, overhead } = gasData;
 
-  const l1GasUsed = getL2ToL1GasUsed(calldata, overhead, chainId);
+  const l1GasUsed = getL2ToL1GasUsed(calldata, overhead);
   // l1BaseFee is L1 Gas Price on etherscan
   const l1Fee = l1GasUsed.mul(l1BaseFee);
   const unscaled = l1Fee.mul(scalar);
@@ -238,42 +226,23 @@ export function calculateOptimismToL1FeeFromCalldata(
   return [l1GasUsed, scaled];
 }
 
-export function getL2ToL1GasUsed(
-  data: string,
-  overhead: BigNumber,
-  chainId: ChainId
-): BigNumber {
-  switch (chainId) {
-    case ChainId.ARBITRUM_ONE:
-    case ChainId.ARBITRUM_GOERLI: {
-      // calculates bytes of compressed calldata
-      const l1ByteUsed = getArbitrumBytes(data);
-      return l1ByteUsed.mul(16);
+// based on the code from the optimism OVM_GasPriceOracle contract
+export function getL2ToL1GasUsed(data: string, overhead: BigNumber): BigNumber {
+  // data is hex encoded
+  const dataArr: string[] = data.slice(2).match(/.{1,2}/g)!;
+  const numBytes = dataArr.length;
+  let count = 0;
+  for (let i = 0; i < numBytes; i += 1) {
+    const byte = parseInt(dataArr[i]!, 16);
+    if (byte == 0) {
+      count += 4;
+    } else {
+      count += 16;
     }
-    case ChainId.OPTIMISM:
-    case ChainId.OPTIMISM_GOERLI:
-    case ChainId.BASE:
-    case ChainId.BASE_GOERLI: {
-      // based on the code from the optimism OVM_GasPriceOracle contract
-      // data is hex encoded
-      const dataArr: string[] = data.slice(2).match(/.{1,2}/g)!;
-      const numBytes = dataArr.length;
-      let count = 0;
-      for (let i = 0; i < numBytes; i += 1) {
-        const byte = parseInt(dataArr[i]!, 16);
-        if (byte == 0) {
-          count += 4;
-        } else {
-          count += 16;
-        }
-      }
-      const unsigned = overhead.add(count);
-      const signedConversion = 68 * 16;
-      return unsigned.add(signedConversion);
-    }
-    default:
-      return BigNumber.from(0);
   }
+  const unsigned = overhead.add(count);
+  const signedConversion = 68 * 16;
+  return unsigned.add(signedConversion);
 }
 
 export async function calculateGasUsed(
@@ -283,20 +252,23 @@ export async function calculateGasUsed(
   v2PoolProvider: IV2PoolProvider,
   v3PoolProvider: IV3PoolProvider,
   l2GasData?: ArbitrumGasData | OptimismGasData,
-  providerConfig?: GasModelProviderConfig
-): Promise<{
-  estimatedGasUsedUSD: CurrencyAmount;
-  estimatedGasUsedQuoteToken: CurrencyAmount;
-  estimatedGasUsedGasToken?: CurrencyAmount;
-  quoteGasAdjusted: CurrencyAmount;
-}> {
+  providerConfig?: ProviderConfig
+) {
   const quoteToken = route.quote.currency.wrapped;
   const gasPriceWei = route.gasPriceWei;
   // calculate L2 to L1 security fee if relevant
   let l2toL1FeeInWei = BigNumber.from(0);
-  // Arbitrum charges L2 gas for L1 calldata posting costs.
-  // See https://github.com/Uniswap/smart-order-router/pull/464/files#r1441376802
   if (
+    [
+      ChainId.ARBITRUM_ONE,
+      ChainId.ARBITRUM_GOERLI,
+    ].includes(chainId)
+  ) {
+    l2toL1FeeInWei = calculateArbitrumToL1FeeFromCalldata(
+      route.methodParameters!.calldata,
+      l2GasData as ArbitrumGasData
+    )[1];
+  } else if (
     [
       ChainId.OPTIMISM,
       ChainId.OPTIMISM_GOERLI,
@@ -306,8 +278,7 @@ export async function calculateGasUsed(
   ) {
     l2toL1FeeInWei = calculateOptimismToL1FeeFromCalldata(
       route.methodParameters!.calldata,
-      l2GasData as OptimismGasData,
-      chainId
+      l2GasData as OptimismGasData
     )[1];
   }
 
@@ -325,54 +296,14 @@ export async function calculateGasUsed(
     providerConfig
   );
 
-  /** ------ MARK: USD logic  -------- */
-  const gasCostUSD = getQuoteThroughNativePool(
-    chainId,
-    costNativeCurrency,
-    usdPool
-  );
+  const gasCostUSD = await getGasCostInUSD(usdPool, costNativeCurrency);
 
-  /** ------ MARK: Conditional logic run if gasToken is specified  -------- */
-  let gasCostInTermsOfGasToken: CurrencyAmount | undefined = undefined;
-  if (providerConfig?.gasToken) {
-    if (providerConfig.gasToken.equals(nativeCurrency)) {
-      gasCostInTermsOfGasToken = costNativeCurrency;
-    } else {
-      const nativeAndSpecifiedGasTokenPool =
-        await getHighestLiquidityV3NativePool(
-          providerConfig.gasToken,
-          v3PoolProvider,
-          providerConfig
-        );
-      if (nativeAndSpecifiedGasTokenPool) {
-        gasCostInTermsOfGasToken = getQuoteThroughNativePool(
-          chainId,
-          costNativeCurrency,
-          nativeAndSpecifiedGasTokenPool
-        );
-      } else {
-        log.info(
-          `Could not find a V3 pool for gas token ${providerConfig.gasToken.symbol}`
-        );
-      }
-    }
-  }
-
-  /** ------ MARK: Main gas logic in terms of quote token -------- */
-  let gasCostQuoteToken: CurrencyAmount | undefined = undefined;
-  // shortcut if quote token is native currency
-  if (quoteToken.equals(nativeCurrency)) {
-    gasCostQuoteToken = costNativeCurrency;
-  }
+  let gasCostQuoteToken = costNativeCurrency;
   // get fee in terms of quote token
-  else {
+  if (!quoteToken.equals(nativeCurrency)) {
     const nativePools = await Promise.all([
-      getHighestLiquidityV3NativePool(
-        quoteToken,
-        v3PoolProvider,
-        providerConfig
-      ),
-      getV2NativePool(quoteToken, v2PoolProvider, providerConfig),
+      getHighestLiquidityV3NativePool(quoteToken, v3PoolProvider, providerConfig),
+      getV2NativePool(quoteToken, v2PoolProvider),
     ]);
     const nativePool = nativePools.find((pool) => pool !== null);
 
@@ -382,10 +313,10 @@ export async function calculateGasUsed(
       );
       gasCostQuoteToken = CurrencyAmount.fromRawAmount(quoteToken, 0);
     } else {
-      gasCostQuoteToken = getQuoteThroughNativePool(
-        chainId,
-        costNativeCurrency,
-        nativePool
+      gasCostQuoteToken = await getGasCostInQuoteToken(
+        quoteToken,
+        nativePool,
+        costNativeCurrency
       );
     }
   }
@@ -403,7 +334,6 @@ export async function calculateGasUsed(
   return {
     estimatedGasUsedUSD: gasCostUSD,
     estimatedGasUsedQuoteToken: gasCostQuoteToken,
-    estimatedGasUsedGasToken: gasCostInTermsOfGasToken,
     quoteGasAdjusted: quoteGasAdjusted,
   };
 }
@@ -412,13 +342,10 @@ export function initSwapRouteFromExisting(
   swapRoute: SwapRoute,
   v2PoolProvider: IV2PoolProvider,
   v3PoolProvider: IV3PoolProvider,
-  portionProvider: IPortionProvider,
-  quoteGasAdjusted: CurrencyAmount,
+  quoteGasAdjusted: CurrencyAmount<Currency>,
   estimatedGasUsed: BigNumber,
-  estimatedGasUsedQuoteToken: CurrencyAmount,
-  estimatedGasUsedUSD: CurrencyAmount,
-  swapOptions: SwapOptions,
-  estimatedGasUsedGasToken?: CurrencyAmount
+  estimatedGasUsedQuoteToken: CurrencyAmount<Currency>,
+  estimatedGasUsedUSD: CurrencyAmount<Currency>
 ): SwapRoute {
   const currencyIn = swapRoute.trade.inputAmount.currency;
   const currencyOut = swapRoute.trade.outputAmount.currency;
@@ -509,189 +436,23 @@ export function initSwapRouteFromExisting(
     tradeType,
     routesWithValidQuote
   );
-
-  const quoteGasAndPortionAdjusted = swapRoute.portionAmount
-    ? portionProvider.getQuoteGasAndPortionAdjusted(
-        swapRoute.trade.tradeType,
-        quoteGasAdjusted,
-        swapRoute.portionAmount
-      )
-    : undefined;
-  const routesWithValidQuotePortionAdjusted =
-    portionProvider.getRouteWithQuotePortionAdjusted(
-      swapRoute.trade.tradeType,
-      routesWithValidQuote,
-      swapOptions
-    );
-
   return {
     quote: swapRoute.quote,
     quoteGasAdjusted,
-    quoteGasAndPortionAdjusted,
     estimatedGasUsed,
     estimatedGasUsedQuoteToken,
-    estimatedGasUsedGasToken,
     estimatedGasUsedUSD,
     gasPriceWei: BigNumber.from(swapRoute.gasPriceWei),
     trade,
-    route: routesWithValidQuotePortionAdjusted,
+    route: routesWithValidQuote,
     blockNumber: BigNumber.from(swapRoute.blockNumber),
     methodParameters: swapRoute.methodParameters
       ? ({
-          calldata: swapRoute.methodParameters.calldata,
-          value: swapRoute.methodParameters.value,
-          to: swapRoute.methodParameters.to,
-        } as MethodParameters)
+        calldata: swapRoute.methodParameters.calldata,
+        value: swapRoute.methodParameters.value,
+        to: swapRoute.methodParameters.to,
+      } as MethodParameters)
       : undefined,
     simulationStatus: swapRoute.simulationStatus,
-    portionAmount: swapRoute.portionAmount,
   };
 }
-
-export const calculateL1GasFeesHelper = async (
-  route: RouteWithValidQuote[],
-  chainId: ChainId,
-  usdPool: Pair | Pool,
-  quoteToken: Token,
-  nativePool: Pair | Pool | null,
-  l2GasData?: ArbitrumGasData | OptimismGasData
-): Promise<{
-  gasUsedL1: BigNumber;
-  gasUsedL1OnL2: BigNumber;
-  gasCostL1USD: CurrencyAmount;
-  gasCostL1QuoteToken: CurrencyAmount;
-}> => {
-  const swapOptions: SwapOptionsUniversalRouter = {
-    type: SwapType.UNIVERSAL_ROUTER,
-    recipient: '0x0000000000000000000000000000000000000001',
-    deadlineOrPreviousBlockhash: 100,
-    slippageTolerance: new Percent(5, 10_000),
-  };
-  let mainnetGasUsed = BigNumber.from(0);
-  let mainnetFeeInWei = BigNumber.from(0);
-  let gasUsedL1OnL2 = BigNumber.from(0);
-  if (opStackChains.includes(chainId)) {
-    [mainnetGasUsed, mainnetFeeInWei] = calculateOptimismToL1SecurityFee(
-      route,
-      swapOptions,
-      l2GasData as OptimismGasData,
-      chainId
-    );
-  } else if (
-    chainId == ChainId.ARBITRUM_ONE ||
-    chainId == ChainId.ARBITRUM_GOERLI
-  ) {
-    [mainnetGasUsed, mainnetFeeInWei, gasUsedL1OnL2] =
-      calculateArbitrumToL1SecurityFee(
-        route,
-        swapOptions,
-        l2GasData as ArbitrumGasData,
-        chainId
-      );
-  }
-
-  // wrap fee to native currency
-  const nativeCurrency = WRAPPED_NATIVE_CURRENCY[chainId];
-  const costNativeCurrency = CurrencyAmount.fromRawAmount(
-    nativeCurrency,
-    mainnetFeeInWei.toString()
-  );
-
-  // convert fee into usd
-  const gasCostL1USD: CurrencyAmount = getQuoteThroughNativePool(
-    chainId,
-    costNativeCurrency,
-    usdPool
-  );
-
-  let gasCostL1QuoteToken = costNativeCurrency;
-  // if the inputted token is not in the native currency, quote a native/quote token pool to get the gas cost in terms of the quote token
-  if (!quoteToken.equals(nativeCurrency)) {
-    if (!nativePool) {
-      log.info(
-        'Could not find a pool to convert the cost into the quote token'
-      );
-      gasCostL1QuoteToken = CurrencyAmount.fromRawAmount(quoteToken, 0);
-    } else {
-      const nativeTokenPrice =
-        nativePool.token0.address == nativeCurrency.address
-          ? nativePool.token0Price
-          : nativePool.token1Price;
-      gasCostL1QuoteToken = nativeTokenPrice.quote(costNativeCurrency);
-    }
-  }
-  // gasUsedL1 is the gas units used calculated from the bytes of the calldata
-  // gasCostL1USD and gasCostL1QuoteToken is the cost of gas in each of those tokens
-  return {
-    gasUsedL1: mainnetGasUsed,
-    gasUsedL1OnL2,
-    gasCostL1USD,
-    gasCostL1QuoteToken,
-  };
-
-  /**
-   * To avoid having a call to optimism's L1 security fee contract for every route and amount combination,
-   * we replicate the gas cost accounting here.
-   */
-  function calculateOptimismToL1SecurityFee(
-    routes: RouteWithValidQuote[],
-    swapConfig: SwapOptionsUniversalRouter,
-    gasData: OptimismGasData,
-    chainId: ChainId
-  ): [BigNumber, BigNumber] {
-    const { l1BaseFee, scalar, decimals, overhead } = gasData;
-
-    const route: RouteWithValidQuote = routes[0]!;
-    const amountToken =
-      route.tradeType == TradeType.EXACT_INPUT
-        ? route.amount.currency
-        : route.quote.currency;
-    const outputToken =
-      route.tradeType == TradeType.EXACT_INPUT
-        ? route.quote.currency
-        : route.amount.currency;
-
-    // build trade for swap calldata
-    const trade = buildTrade(amountToken, outputToken, route.tradeType, routes);
-    const data = buildSwapMethodParameters(
-      trade,
-      swapConfig,
-      ChainId.OPTIMISM
-    ).calldata;
-    const l1GasUsed = getL2ToL1GasUsed(data, overhead, chainId);
-    // l1BaseFee is L1 Gas Price on etherscan
-    const l1Fee = l1GasUsed.mul(l1BaseFee);
-    const unscaled = l1Fee.mul(scalar);
-    // scaled = unscaled / (10 ** decimals)
-    const scaledConversion = BigNumber.from(10).pow(decimals);
-    const scaled = unscaled.div(scaledConversion);
-    return [l1GasUsed, scaled];
-  }
-
-  function calculateArbitrumToL1SecurityFee(
-    routes: RouteWithValidQuote[],
-    swapConfig: SwapOptionsUniversalRouter,
-    gasData: ArbitrumGasData,
-    chainId: ChainId
-  ): [BigNumber, BigNumber, BigNumber] {
-    const route: RouteWithValidQuote = routes[0]!;
-
-    const amountToken =
-      route.tradeType == TradeType.EXACT_INPUT
-        ? route.amount.currency
-        : route.quote.currency;
-    const outputToken =
-      route.tradeType == TradeType.EXACT_INPUT
-        ? route.quote.currency
-        : route.amount.currency;
-
-    // build trade for swap calldata
-    const trade = buildTrade(amountToken, outputToken, route.tradeType, routes);
-    const data = buildSwapMethodParameters(
-      trade,
-      swapConfig,
-      ChainId.ARBITRUM_ONE
-    ).calldata;
-    return calculateArbitrumToL1FeeFromCalldata(data, gasData, chainId);
-  }
-};

@@ -9,6 +9,7 @@ import { ICache } from './../cache';
 import { ProviderConfig } from './../provider';
 import { IV3PoolProvider, V3PoolAccessor } from './pool-provider';
 
+
 /**
  * Provider for getting V3 pools, with functionality for caching the results.
  * Does not cache by block because we compute quotes using the on-chain quoter
@@ -18,14 +19,8 @@ import { IV3PoolProvider, V3PoolAccessor } from './pool-provider';
  * @class CachingV3PoolProvider
  */
 export class CachingV3PoolProvider implements IV3PoolProvider {
-  private POOL_KEY = (
-    chainId: ChainId,
-    address: string,
-    blockNumber?: number
-  ) =>
-    blockNumber
-      ? `pool-${chainId}-${address}-${blockNumber}`
-      : `pool-${chainId}-${address}`;
+  private POOL_KEY = (chainId: ChainId, address: string) =>
+    `pool-${chainId}-${address}`;
 
   /**
    * Creates an instance of CachingV3PoolProvider.
@@ -47,7 +42,6 @@ export class CachingV3PoolProvider implements IV3PoolProvider {
     const poolsToGetTokenPairs: Array<[Token, Token, FeeAmount]> = [];
     const poolsToGetAddresses: string[] = [];
     const poolAddressToPool: { [poolAddress: string]: Pool } = {};
-    const blockNumber = await providerConfig?.blockNumber;
 
     for (const [tokenA, tokenB, feeAmount] of tokenPairs) {
       const { poolAddress, token0, token1 } = this.getPoolAddress(
@@ -63,23 +57,15 @@ export class CachingV3PoolProvider implements IV3PoolProvider {
       poolAddressSet.add(poolAddress);
 
       const cachedPool = await this.cache.get(
-        this.POOL_KEY(this.chainId, poolAddress, blockNumber)
+        this.POOL_KEY(this.chainId, poolAddress)
       );
       if (cachedPool) {
-        metric.putMetric(
-          'V3_INMEMORY_CACHING_POOL_HIT_IN_MEMORY',
-          1,
-          MetricLoggerUnit.None
-        );
+        metric.putMetric('V3_INMEMORY_CACHING_POOL_HIT_IN_MEMORY', 1, MetricLoggerUnit.None)
         poolAddressToPool[poolAddress] = cachedPool;
         continue;
       }
 
-      metric.putMetric(
-        'V3_INMEMORY_CACHING_POOL_MISS_NOT_IN_MEMORY',
-        1,
-        MetricLoggerUnit.None
-      );
+      metric.putMetric('V3_INMEMORY_CACHING_POOL_MISS_NOT_IN_MEMORY', 1, MetricLoggerUnit.None)
       poolsToGetTokenPairs.push([token0, token1, feeAmount]);
       poolsToGetAddresses.push(poolAddress);
     }
@@ -111,11 +97,7 @@ export class CachingV3PoolProvider implements IV3PoolProvider {
         const pool = poolAccessor.getPoolByAddress(address);
         if (pool) {
           poolAddressToPool[address] = pool;
-          // We don't want to wait for this caching to complete before returning the pools.
-          this.cache.set(
-            this.POOL_KEY(this.chainId, address, blockNumber),
-            pool
-          );
+          await this.cache.set(this.POOL_KEY(this.chainId, address), pool);
         }
       }
     }

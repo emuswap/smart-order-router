@@ -5,40 +5,10 @@ import _ from 'lodash';
 import { WRAPPED_NATIVE_CURRENCY } from '../../util/chains';
 import { log } from '../../util/log';
 import {
-  ARB_ARBITRUM,
-  BTC_BNB,
-  BUSD_BNB,
-  CELO,
-  CEUR_CELO,
-  CUSD_CELO,
-  DAI_ARBITRUM,
-  DAI_AVAX,
-  DAI_BNB,
-  DAI_CELO,
   DAI_MAINNET,
-  DAI_MOONBEAM,
-  DAI_OPTIMISM,
-  ETH_BNB,
-  OP_OPTIMISM,
-  USDC_ARBITRUM,
-  USDC_AVAX,
-  USDC_BASE,
-  USDC_BNB,
   USDC_MAINNET,
-  USDC_MOONBEAM,
-  USDC_NATIVE_ARBITRUM,
-  USDC_OPTIMISM,
-  USDC_POLYGON,
-  USDT_ARBITRUM,
-  USDT_BNB,
   USDT_MAINNET,
-  USDT_OPTIMISM,
-  WBTC_ARBITRUM,
-  WBTC_MAINNET,
-  WBTC_MOONBEAM,
-  WBTC_OPTIMISM,
-  WETH_POLYGON,
-  WMATIC_POLYGON,
+  WBTC_MAINNET
 } from '../token-provider';
 
 import { IV2SubgraphProvider, V2SubgraphPool } from './subgraph-provider';
@@ -53,59 +23,27 @@ const BASES_TO_CHECK_TRADES_AGAINST: ChainTokenList = {
     DAI_MAINNET,
     USDC_MAINNET,
     USDT_MAINNET,
-    WBTC_MAINNET,
+    WBTC_MAINNET
   ],
   [ChainId.GOERLI]: [WRAPPED_NATIVE_CURRENCY[ChainId.GOERLI]!],
   [ChainId.SEPOLIA]: [WRAPPED_NATIVE_CURRENCY[ChainId.SEPOLIA]!],
-  //v2 not deployed on [arbitrum, polygon, celo, gnosis, moonbeam, bnb, avalanche] and their testnets
-  [ChainId.OPTIMISM]: [
-    WRAPPED_NATIVE_CURRENCY[ChainId.OPTIMISM]!,
-    USDC_OPTIMISM,
-    DAI_OPTIMISM,
-    USDT_OPTIMISM,
-    WBTC_OPTIMISM,
-    OP_OPTIMISM,
-  ],
-  [ChainId.ARBITRUM_ONE]: [
-    WRAPPED_NATIVE_CURRENCY[ChainId.ARBITRUM_ONE]!,
-    WBTC_ARBITRUM,
-    DAI_ARBITRUM,
-    USDC_ARBITRUM,
-    USDC_NATIVE_ARBITRUM,
-    USDT_ARBITRUM,
-    ARB_ARBITRUM,
-  ],
+  //v2 not deployed on [optimism, arbitrum, polygon, celo, gnosis, moonbeam, bnb, avalanche] and their testnets
+  [ChainId.OPTIMISM]: [],
+  [ChainId.ARBITRUM_ONE]: [],
   [ChainId.ARBITRUM_GOERLI]: [],
-  [ChainId.ARBITRUM_SEPOLIA]: [],
   [ChainId.OPTIMISM_GOERLI]: [],
-  [ChainId.OPTIMISM_SEPOLIA]: [],
-  [ChainId.POLYGON]: [USDC_POLYGON, WETH_POLYGON, WMATIC_POLYGON],
+  [ChainId.POLYGON]: [],
   [ChainId.POLYGON_MUMBAI]: [],
-  [ChainId.CELO]: [CELO, CUSD_CELO, CEUR_CELO, DAI_CELO],
+  [ChainId.CELO]: [],
   [ChainId.CELO_ALFAJORES]: [],
+  [ChainId.CLASSIC]: [],
+  [ChainId.CLASSIC_MORDOR]: [],
   [ChainId.GNOSIS]: [],
-  [ChainId.MOONBEAM]: [
-    WRAPPED_NATIVE_CURRENCY[ChainId.MOONBEAM],
-    DAI_MOONBEAM,
-    USDC_MOONBEAM,
-    WBTC_MOONBEAM,
-  ],
-  [ChainId.BNB]: [
-    WRAPPED_NATIVE_CURRENCY[ChainId.BNB],
-    BUSD_BNB,
-    DAI_BNB,
-    USDC_BNB,
-    USDT_BNB,
-    BTC_BNB,
-    ETH_BNB,
-  ],
-  [ChainId.AVALANCHE]: [
-    WRAPPED_NATIVE_CURRENCY[ChainId.AVALANCHE],
-    USDC_AVAX,
-    DAI_AVAX,
-  ],
+  [ChainId.MOONBEAM]: [],
+  [ChainId.BNB]: [],
+  [ChainId.AVALANCHE]: [],
   [ChainId.BASE_GOERLI]: [],
-  [ChainId.BASE]: [WRAPPED_NATIVE_CURRENCY[ChainId.BASE], USDC_BASE],
+  [ChainId.BASE]: []
 };
 
 /**
@@ -172,14 +110,14 @@ export class StaticV2SubgraphProvider implements IV2SubgraphProvider {
           id: poolAddress,
           liquidity: '100',
           token0: {
-            id: token0.address,
+            id: token0.address
           },
           token1: {
-            id: token1.address,
+            id: token1.address
           },
           supply: 100,
           reserve: 100,
-          reserveUSD: 100,
+          reserveUSD: 100
         };
       })
       .compact()

@@ -1,6 +1,6 @@
 import { ChainId } from '@uniswap/sdk-core';
 
-import { AlphaRouterConfig, LowerCaseStringArray } from './alpha-router';
+import { AlphaRouterConfig } from './alpha-router';
 
 export const DEFAULT_ROUTING_CONFIG_BY_CHAIN = (
   chainId: ChainId
@@ -9,7 +9,6 @@ export const DEFAULT_ROUTING_CONFIG_BY_CHAIN = (
     // Optimism
     case ChainId.OPTIMISM:
     case ChainId.OPTIMISM_GOERLI:
-    case ChainId.OPTIMISM_SEPOLIA:
     case ChainId.BASE:
     case ChainId.BASE_GOERLI:
       return {
@@ -40,7 +39,6 @@ export const DEFAULT_ROUTING_CONFIG_BY_CHAIN = (
     // have to adjust the routing config so we explore fewer routes.
     case ChainId.ARBITRUM_ONE:
     case ChainId.ARBITRUM_GOERLI:
-    case ChainId.ARBITRUM_SEPOLIA:
     case ChainId.CELO:
     case ChainId.CELO_ALFAJORES:
       return {
@@ -73,9 +71,6 @@ export const DEFAULT_ROUTING_CONFIG_BY_CHAIN = (
           topNDirectSwaps: 1,
           topNTokenInOut: 5,
           topNSecondHop: 2,
-          tokensToAvoidOnSecondHops: new LowerCaseStringArray(
-            '0xd46ba6d942050d489dbd938a2c909a5d5039a161' // AMPL on Mainnet
-          ),
           topNWithEachBaseToken: 2,
           topNWithBaseToken: 6,
         },

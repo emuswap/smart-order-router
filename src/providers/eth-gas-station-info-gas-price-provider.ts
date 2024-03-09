@@ -28,10 +28,8 @@ export class ETHGasStationInfoProvider extends IGasPriceProvider {
     this.url = url;
   }
 
-  public override async getGasPrice(
-    _latestBlockNumber: number,
-    _requestBlockNumber?: number
-  ): Promise<GasPrice> {
+  public async getGasPrice(): Promise<GasPrice> {
+    log.info(`About to get gas prices from gas station ${this.url}`);
     const response = await retry(
       async () => {
         return axios.get<ETHGasStationResponse>(this.url);
