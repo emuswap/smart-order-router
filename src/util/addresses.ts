@@ -22,7 +22,8 @@ export const V3_CORE_FACTORY_ADDRESSES: AddressMap = {
   [ChainId.AVALANCHE]: CHAIN_TO_ADDRESSES_MAP[ChainId.AVALANCHE].v3CoreFactoryAddress,
   [ChainId.BASE_GOERLI]: CHAIN_TO_ADDRESSES_MAP[ChainId.BASE_GOERLI].v3CoreFactoryAddress,
   [ChainId.BASE]: CHAIN_TO_ADDRESSES_MAP[ChainId.BASE].v3CoreFactoryAddress,
-  // TODO: Gnosis + Moonbeam contracts to be deployed
+  [ChainId.ZIRCUIT]: CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT].v3CoreFactoryAddress,
+  [ChainId.ZIRCUIT_SEPOLIA]: CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT_SEPOLIA].v3CoreFactoryAddress,
 };
 
 export const QUOTER_V2_ADDRESSES: AddressMap = {
@@ -38,7 +39,8 @@ export const QUOTER_V2_ADDRESSES: AddressMap = {
   [ChainId.AVALANCHE]: CHAIN_TO_ADDRESSES_MAP[ChainId.AVALANCHE].quoterAddress,
   [ChainId.BASE_GOERLI]: CHAIN_TO_ADDRESSES_MAP[ChainId.BASE_GOERLI].quoterAddress,
   [ChainId.BASE]: CHAIN_TO_ADDRESSES_MAP[ChainId.BASE].quoterAddress,
-  // TODO: Gnosis + Moonbeam contracts to be deployed
+  [ChainId.ZIRCUIT]: CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT].quoterAddress,
+  [ChainId.ZIRCUIT_SEPOLIA]: CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT_SEPOLIA].quoterAddress,
 };
 
 export const MIXED_ROUTE_QUOTER_V1_ADDRESSES: AddressMap = {
@@ -59,7 +61,8 @@ export const UNISWAP_MULTICALL_ADDRESSES: AddressMap = {
   [ChainId.AVALANCHE]: CHAIN_TO_ADDRESSES_MAP[ChainId.AVALANCHE].multicallAddress,
   [ChainId.BASE_GOERLI]: CHAIN_TO_ADDRESSES_MAP[ChainId.BASE_GOERLI].multicallAddress,
   [ChainId.BASE]: CHAIN_TO_ADDRESSES_MAP[ChainId.BASE].multicallAddress,
-  // TODO: Gnosis + Moonbeam contracts to be deployed
+  [ChainId.ZIRCUIT]: CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT].multicallAddress,
+  [ChainId.ZIRCUIT_SEPOLIA]: CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT_SEPOLIA].multicallAddress,
 };
 
 export const SWAP_ROUTER_02_ADDRESSES = (chainId: number) : string => {
@@ -71,6 +74,12 @@ export const SWAP_ROUTER_02_ADDRESSES = (chainId: number) : string => {
   }
   if (chainId == ChainId.CLASSIC_MORDOR) {
     return CHAIN_TO_ADDRESSES_MAP[ChainId.CLASSIC_MORDOR].swapRouter02Address!;
+  }
+  if (chainId == ChainId.ZIRCUIT) {
+    return CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT].swapRouter02Address!;
+  }
+  if (chainId == ChainId.ZIRCUIT_SEPOLIA) {
+    return CHAIN_TO_ADDRESSES_MAP[ChainId.ZIRCUIT_SEPOLIA].swapRouter02Address!;
   }
   return '0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45';
 };
@@ -187,6 +196,20 @@ export const WETH9: {
     '0x1953cab0E5bFa6D4a9BaD6E05fD46C1CC6527a5a',
     18,
     'WETC',
+    'Wrapped Ether'
+  ),
+  [ChainId.ZIRCUIT]: new Token(
+    ChainId.ZIRCUIT,
+    '0xB624103Eb622d655dd834B694Aa6EA0363f2A156',
+    18,
+    'WETH',
+    'Wrapped Ether'
+  ),
+  [ChainId.ZIRCUIT_SEPOLIA]: new Token(
+    ChainId.ZIRCUIT,
+    '0xB624103Eb622d655dd834B694Aa6EA0363f2A156',
+    18,
+    'WETH',
     'Wrapped Ether'
   ),
 };

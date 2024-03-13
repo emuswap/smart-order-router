@@ -83,6 +83,10 @@ export const ID_TO_CHAIN_ID = (id: number): ChainId => {
       return ChainId.BASE;
     case 84531:
       return ChainId.BASE_GOERLI;
+    case 48900:
+      return ChainId.ZIRCUIT;
+    case 48899:
+      return ChainId.ZIRCUIT_SEPOLIA;
     default:
       throw new Error(`Unknown chain id: ${id}`);
   }
@@ -108,6 +112,8 @@ export enum ChainName {
   AVALANCHE = 'avalanche-mainnet',
   BASE = 'base-mainnet',
   BASE_GOERLI = 'base-goerli',
+  ZIRCUIT = 'zircuit-mainnet',
+  ZIRCUIT_SEPOLIA = 'zircuit-sepolia',
 }
 
 
@@ -245,6 +251,10 @@ export const ID_TO_NETWORK_NAME = (id: number): ChainName => {
       return ChainName.BASE;
     case 84531:
       return ChainName.BASE_GOERLI;
+    case 48900:
+      return ChainName.ZIRCUIT;
+    case 48899:
+      return ChainName.ZIRCUIT_SEPOLIA;
     default:
       throw new Error(`Unknown chain id: ${id}`);
   }
@@ -424,7 +434,21 @@ export const WRAPPED_NATIVE_CURRENCY: { [chainId in ChainId]: Token } = {
     18,
     'WETH',
     'Wrapped Ether'
-  )
+  ),
+  [ChainId.ZIRCUIT]: new Token(
+    ChainId.ZIRCUIT,
+    '0xB624103Eb622d655dd834B694Aa6EA0363f2A156',
+    18,
+    'WETH',
+    'Wrapped Ether'
+  ),
+  [ChainId.ZIRCUIT_SEPOLIA]: new Token(
+    ChainId.ZIRCUIT,
+    '0xB624103Eb622d655dd834B694Aa6EA0363f2A156',
+    18,
+    'WETH',
+    'Wrapped Ether'
+  ),
 };
 
 function isMatic(

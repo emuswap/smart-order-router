@@ -62,6 +62,12 @@ export declare const ADDITIONAL_BASES: (tokenProvider: ITokenProvider) => Promis
     8453?: {
         [tokenAddress: string]: Token[];
     } | undefined;
+    48900?: {
+        [tokenAddress: string]: Token[];
+    } | undefined;
+    48899?: {
+        [tokenAddress: string]: Token[];
+    } | undefined;
 }>;
 /**
  * Some tokens can only be swapped via certain pairs, so we override the list of bases that are considered for these
@@ -123,6 +129,12 @@ export declare const CUSTOM_BASES: (tokenProvider: ITokenProvider) => Promise<{
         [tokenAddress: string]: Token[];
     } | undefined;
     8453?: {
+        [tokenAddress: string]: Token[];
+    } | undefined;
+    48900?: {
+        [tokenAddress: string]: Token[];
+    } | undefined;
+    48899?: {
         [tokenAddress: string]: Token[];
     } | undefined;
 }>;
