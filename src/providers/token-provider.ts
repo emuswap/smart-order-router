@@ -463,6 +463,24 @@ export const USDC_CLASSIC_MORDOR = new Token(
   'USDC'
 );
 
+// Zircuit Tokens
+export const USDC_ZIRCUIT = new Token(
+  ChainId.ZIRCUIT,
+  '0x31bcE405c192BCb65FFc15cE4D7D5c27ed317311', // TODO: add address
+  6,
+  'USDC',
+  'USDC'
+);
+
+// Zircuit Sepolia Tokens
+export const USDC_ZIRCUIT_SEPOLIA = new Token(
+  ChainId.ZIRCUIT_SEPOLIA,
+  '0x31bcE405c192BCb65FFc15cE4D7D5c27ed317311',
+  6,
+  'USDC',
+  'USDC'
+);
+
 // Avalanche Tokens
 export const DAI_AVAX = new Token(
   ChainId.AVALANCHE,

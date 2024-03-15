@@ -77,6 +77,8 @@ export declare const CUSD_CELO_ALFAJORES: Token;
 export declare const CEUR_CELO_ALFAJORES: Token;
 export declare const USDC_CLASSIC: Token;
 export declare const USDC_CLASSIC_MORDOR: Token;
+export declare const USDC_ZIRCUIT: Token;
+export declare const USDC_ZIRCUIT_SEPOLIA: Token;
 export declare const DAI_AVAX: Token;
 export declare const USDC_AVAX: Token;
 export declare const USDC_BASE: Token;
