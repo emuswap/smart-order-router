@@ -206,7 +206,7 @@ export const WETH9: {
     'Wrapped Ether'
   ),
   [ChainId.ZIRCUIT_SEPOLIA]: new Token(
-    ChainId.ZIRCUIT,
+    ChainId.ZIRCUIT_SEPOLIA,
     '0xB624103Eb622d655dd834B694Aa6EA0363f2A156',
     18,
     'WETH',
